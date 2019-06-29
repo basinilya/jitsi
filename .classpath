@@ -55,7 +55,7 @@
 			<attribute name="javadoc_location" value="http://dbus.freedesktop.org/doc/dbus-java/api/"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="lib/installer-exclude/libjitsi-1.0-09fc4d0.jar" sourcepath="/libjitsi/src"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/libjitsi-1.0-20190405.175243-382.jar" sourcepath="/libjitsi/src"/>
 	<classpathentry kind="lib" path="lib/bundle/log4j.jar"/>
 	<classpathentry kind="lib" path="lib/installer-exclude/mac_widgets-0.9.5.jar"/>
 	<classpathentry kind="lib" path="lib/installer-exclude/objenesis-1.2.jar"/>
@@ -82,20 +82,22 @@
 	<classpathentry kind="lib" path="lib/installer-exclude/dnssecjava-1.1.jar" sourcepath="/dnssecjava"/>
 	<classpathentry kind="lib" path="lib/installer-exclude/gson-2.8.0.jar"/>
 	<classpathentry kind="lib" path="lib/installer-exclude/commons-compress-1.15.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-core-4.2.1.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-debug-4.2.1.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-extensions-4.2.1.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-im-4.2.1.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-java7-4.2.1.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-legacy-4.2.1.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-resolver-javax-4.2.1.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-sasl-javax-4.2.1.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-tcp-4.2.1.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/jxmpp-core-0.5.0.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/jxmpp-jid-0.5.0.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/jxmpp-util-cache-0.5.0.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-bosh-4.2.1.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/xpp3-1.1.4c.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/smack-experimental-4.2.1.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-core-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-debug-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-extensions-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-im-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-java7-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-legacy-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-resolver-javax-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-sasl-javax-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-tcp-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/jxmpp-core-0.6.3.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/jxmpp-jid-0.6.3.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/jxmpp-util-cache-0.6.3.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-bosh-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/xpp3-1.1.6.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/smack-experimental-4.2.4.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/jitsi-utils-1.0-20190418.111338-9.jar"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/jitsi-xmpp-extensions-1.0-20190411.124339-4.jar"/>
 	<classpathentry kind="output" path="classes"/>
 </classpath>
