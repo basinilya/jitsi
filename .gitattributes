@@ -1,1 +1,7 @@
 *.java text eol=lf diff=java
+
+# Eclipse always saves its files with platform endings
+.classpath text
+.project text
+.settings/** text
+*.launch text
