@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="org.eclipse.jdt.launching.localJavaApplication">
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
+<listEntry value="/jitsi/src/net/java/sip/communicator/launcher/SIPCommunicator.java"/>
+</listAttribute>
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_TYPES">
+<listEntry value="1"/>
+</listAttribute>
+<stringAttribute key="org.eclipse.jdt.launching.MAIN_TYPE" value="net.java.sip.communicator.launcher.SIPCommunicator"/>
+<stringAttribute key="org.eclipse.jdt.launching.PROGRAM_ARGUMENTS" value="--debug --multiple"/>
+<stringAttribute key="org.eclipse.jdt.launching.PROJECT_ATTR" value="jitsi"/>
+<stringAttribute key="org.eclipse.jdt.launching.VM_ARGUMENTS" value="-Dfelix.config.properties=file:C:\progs\media\jitsi/lib/felix.client.run.properties -Djava.util.logging.config.file=C:\progs\media\jitsi/lib/logging.properties -Djava.net.preferIPv6Addresses=false &quot;-Djava.library.path=C:\progs\media\jitsi\_{ld.library.path};C:\progs\media\jitsi\lib\native\windows-64;C:\progs\media\jitsi\_{system.PATH};C:\Program Files\Documentum\Shared;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\progs\apache-maven-3\bin;C:\ProgramData\Oracle\Java\javapath;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0;V:\goodfs\bin;D:\backup\USBHDD\goodfs\bin;C:\Program Files\Microsoft SQL Server\110\Tools\Binn;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\progs\apache-ant\bin;C:\Go\bin;C:\progs\Git\cmd;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Program Files\Microsoft\Web Platform Installer;C:\Program Files (x86)\OpenVPN\bin;C:\Program Files (x86)\CVSNT;C:\Users\il\go\bin;C:\progs\media\jitsi\_{dyld.library.path}&quot; -Duser.language=en -Duser.country=RU -Duser.variant="/>
+</launchConfiguration>
