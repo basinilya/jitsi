@@ -1306,17 +1306,15 @@ public class ProtocolProviderServiceSipImpl
 
         ListeningPoint srcListeningPoint
                 = getListeningPoint(intendedDestination.getTransportParam());
+        InetSocketAddress targetAddress =
+            getIntendedDestination(intendedDestination);
+        InetAddress localAddress = SipActivator
+            .getNetworkAddressManagerService().getLocalHost(
+                targetAddress.getAddress());
+        int localPort = srcListeningPoint.getPort();
+        String transport = srcListeningPoint.getTransport();
         try
         {
-            InetSocketAddress targetAddress =
-                        getIntendedDestination(intendedDestination);
-
-            InetAddress localAddress = SipActivator
-                .getNetworkAddressManagerService().getLocalHost(
-                    targetAddress.getAddress());
-
-            int localPort = srcListeningPoint.getPort();
-            String transport = srcListeningPoint.getTransport();
             if (ListeningPoint.TCP.equalsIgnoreCase(transport)
                 || ListeningPoint.TLS.equalsIgnoreCase(transport))
             {
@@ -1363,13 +1361,11 @@ public class ProtocolProviderServiceSipImpl
         }
         catch (java.io.IOException ex)
         {
-            logger.error(
-                "Unable to create a via header for port "
-                + sipStackSharing.getLP(ListeningPoint.UDP).getPort(),
-                ex);
+            String s = "Unable to create a via header for: "
+                + localAddress + " => " + targetAddress + " (" + transport + ")";
+            logger.info(s + ": " + ex.toString());
             throw new OperationFailedException(
-                "Unable to create a via header for port "
-                + sipStackSharing.getLP(ListeningPoint.UDP).getPort()
+                s
                 ,OperationFailedException.NETWORK_FAILURE
                 ,ex);
         }
