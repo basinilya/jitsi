@@ -30,7 +30,7 @@
 	<classpathentry kind="lib" path="lib/installer-exclude/hexdump-0.2.jar"/>
 	<classpathentry kind="lib" path="lib/installer-exclude/httpclient-osgi-4.2.3.jar"/>
 	<classpathentry kind="lib" path="lib/installer-exclude/httpcore-osgi-4.2.3.jar"/>
-	<classpathentry kind="lib" path="lib/installer-exclude/ice4j-2.0-20170330.222540-11.jar" sourcepath="/ice4j/src/main/java"/>
+	<classpathentry kind="lib" path="lib/installer-exclude/ice4j-2.0.0-20190607.184546-36.jar" sourcepath="/ice4j/src/main/java"/>
 	<classpathentry kind="lib" path="lib/installer-exclude/sdp-api-1.0.jar"/>
 	<classpathentry kind="lib" path="lib/installer-exclude/sip-api-1.2-1.2.jar"/>
 	<classpathentry kind="lib" path="lib/installer-exclude/jain-sip-ri-ossonly-1.2.279-jitsi-oss1.jar" sourcepath="/jain-sip/src">
