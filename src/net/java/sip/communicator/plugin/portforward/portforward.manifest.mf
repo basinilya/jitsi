@@ -1,0 +1,10 @@
+Bundle-Activator: net.java.sip.communicator.plugin.portforward.PortForwardActivator
+Bundle-Name: Port Forward
+Bundle-Description: Port Forward package
+Bundle-Vendor: foo.org
+Bundle-Version: 0.0.1
+Bundle-SymbolicName: net.java.sip.communicator.plugin.portforward
+Import-Package: org.osgi.framework,
+ net.java.sip.communicator.util,
+ net.java.sip.communicator.impl.protocol.irc,
+ com.ircclouds.irc.api

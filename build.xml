@@ -945,6 +945,7 @@
         bundle-notification-wiring,bundle-notification-config,
         bundle-contacteventhandler,
         bundle-plugin-blf,
+        bundle-port-forward,
         bundle-plugin-contactinfo,bundle-plugin-chatalerter, bundle-keybindings,
         bundle-plugin-keybindingChooser,bundle-plugin-globalproxyconfig,
         bundle-update,bundle-plugin-update,
@@ -1949,6 +1950,16 @@ javax.swing.event, javax.swing.border"/>
            manifest="${src}/net/java/sip/communicator/service/contacteventhandler/contact.event.handler.manifest.mf">
            <zipfileset dir="${dest}/net/java/sip/communicator/service/contacteventhandler"
                prefix="net/java/sip/communicator/service/contacteventhandler"/>
+        </jar>
+    </target>
+
+    <!-- BUNDLE-PORT-FORWARD -->
+    <target name="bundle-port-forward">
+        <!-- Creates the port-forward bundle.-->
+        <jar compress="false" destfile="${bundles.dest}/port-forward.jar"
+            manifest="${src}/net/java/sip/communicator/plugin/portforward/portforward.manifest.mf">
+            <zipfileset dir="${dest}/net/java/sip/communicator/plugin/portforward"
+                        prefix="net/java/sip/communicator/plugin/portforward"/>
         </jar>
     </target>
 
