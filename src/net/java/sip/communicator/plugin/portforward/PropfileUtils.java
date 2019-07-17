@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 
@@ -42,31 +43,35 @@ public class PropfileUtils
             "C:/progs/media/jitsi/lib/portforward.properties"))
         {
             props.load(in);
-            in.read();
         }
-    }
-
-    public void start() throws Exception
-    {
-        load();
-        Set<String> forwards = listSubKeys(props, PREFIX);
-        for (String name : forwards)
+        Set<String> forwardNames = listSubKeys(props, PREFIX);
+        for (String name : forwardNames)
         {
-            System.out.println(name);
             Forward forward = new Forward(name);
+            forwards.put(name, forward);
+            System.out.println(name);
             System.out.println(forward.getContact());
             System.out.println(forward.getAddress());
             System.out.println(forward.isListen());
         }
     }
 
+    private Map<String, Forward> forwards = new HashMap<>();
+
+    public void start() throws Exception
+    {
+        load();
+    }
+
     public class Forward
     {
-        private String name;
+        private final String name;
 
-        public Forward(String name)
+        public Forward(String name) throws Exception
         {
             this.name = name;
+            getAddress();
+            Objects.requireNonNull(getContact());
         }
 
         public String getContact()
@@ -74,9 +79,9 @@ public class PropfileUtils
             return getProp("contact");
         }
 
-        public String getAddress()
+        public InetSocketAddress getAddress() throws URISyntaxException
         {
-            return getProp("address");
+            return parseAddress0(getProp("address"), 0);
         }
 
         /**
