@@ -1,10 +1,17 @@
 package net.java.sip.communicator.plugin.portforward;
 
+import java.io.DataOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -13,6 +20,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+
+import org.ice4j.pseudotcp.PseudoTcpSocket;
+import org.ice4j.pseudotcp.PseudoTcpSocketFactory;
 
 public class PropfileUtils
 {
@@ -48,16 +58,54 @@ public class PropfileUtils
         for (String name : forwardNames)
         {
             Forward forward = new Forward(name);
-            forwards.put(name, forward);
             System.out.println(name);
-            System.out.println(forward.getContact());
+            System.out.println(forward.getContactName());
             System.out.println(forward.getAddress());
             System.out.println(forward.isListen());
         }
     }
 
-    private Map<String, Forward> forwards = new HashMap<>();
+    public void addForward(Forward forward) {
+        forwardsByName.put(forward.name, forward);
+        forward.start();
+    }
 
+    //public Forward getByContact
+    //private Map<String, Forward> by
+    public void contactStatusChange(String contact, boolean online) {
+        //
+    }
+
+    private Map<String, Forward> forwardsByName = new HashMap<>();
+    private Map<String, Contact> contactsByName = new HashMap<>();
+
+    private final PseudoTcpSocketFactory pseudoTcpSocketFactory = new PseudoTcpSocketFactory();
+
+    public class Contact {
+        private Socket controlSocket;
+        private DatagramSocket datagramSocket;
+        private SocketAddress remoteAddress;
+        private long conversationId;
+
+        public long getNextConversationId(String forwardName) throws Exception {
+            DataOutputStream out = new DataOutputStream(controlSocket.getOutputStream());
+            return 0;
+        }
+        public DatagramSocket getDatagramSocket()
+        {
+            return datagramSocket;
+        }
+        public SocketAddress getRemoteAddress()
+        {
+            return remoteAddress;
+        }
+    }
+    
+    public Contact getConnectedContact(String contactName) throws Exception {
+        Contact contact = contactsByName.get(contactName);
+        return contact;
+    }
+    
     public void start() throws Exception
     {
         load();
@@ -66,22 +114,90 @@ public class PropfileUtils
     public class Forward
     {
         private final String name;
+        private InetSocketAddress address;
+        private String contactName;
 
+        private Thread listenThread; 
+
+        private void acceptLoop() throws Exception {
+            InetSocketAddress resolved = getResolved(address);
+            ServerSocket ss = new ServerSocket(resolved.getPort(), 10, resolved.getAddress());
+            for (;;) {
+                Socket sock = ss.accept();
+                boolean ok = false;
+                try {
+                    Contact contact = getConnectedContact(contactName);
+                    long conversationID = contact.getNextConversationId(name);
+                    DatagramSocket dgramSock = contact.getDatagramSocket();
+                    PseudoTcpSocket socket = pseudoTcpSocketFactory.createSocket(dgramSock);
+                    socket.setConversationID(conversationID);
+                    socket.setMTU(1500);
+                    socket.setDebugName(name + "-" + conversationID);
+                    if (listen) {
+                        //
+                    } else {
+                        SocketAddress remoteAddr = contact.getRemoteAddress();
+                        socket.connect(remoteAddr, 15000);
+                    }
+                    ok = true;
+                } catch (Exception e) {
+                    continue;
+                } finally {
+                    if (!ok) {
+                        sock.close();
+                    }
+                }
+            }
+        }
+
+        public void start() {
+            if (!listen) {
+                return;
+            }
+            listenThread = new Thread(new Runnable()
+            {
+                @Override
+                public void run()
+                {
+                    try
+                    {
+                        acceptLoop();
+                    }
+                    catch (Exception e)
+                    {
+                        e.printStackTrace();
+                    }
+                }
+            });
+            listenThread.setName("forward-" + name);
+            listenThread.start();
+        }
+        
         public Forward(String name) throws Exception
         {
-            this.name = name;
-            getAddress();
-            Objects.requireNonNull(getContact());
+            this.name = Objects.requireNonNull(name);
+            parseAddress();
+            parseContact();
+            parseListen();
         }
 
-        public String getContact()
+        public String getContactName()
         {
-            return getProp("contact");
+            return contactName;
         }
 
-        public InetSocketAddress getAddress() throws URISyntaxException
+        private void parseContact() {
+            contactName = getProp("contact");
+            Objects.requireNonNull(contactName);
+        }
+
+        public InetSocketAddress getAddress()
         {
-            return parseAddress0(getProp("address"), 0);
+            return address;
+        }
+
+        private void parseAddress() throws URISyntaxException {
+            address = parseAddress0(getProp("address"), 0);
         }
 
         /**
@@ -89,8 +205,14 @@ public class PropfileUtils
          */
         public boolean isListen()
         {
-            return !Boolean.FALSE.equals(getBoolean("listen"));
+            return listen;
         }
+
+        private void parseListen() {
+            listen = !Boolean.FALSE.equals(getBoolean("listen"));
+        }
+
+        private boolean listen;
 
         /**
          * 
@@ -147,4 +269,10 @@ public class PropfileUtils
         return InetSocketAddress.createUnresolved(host, port);
     }
 
+    
+    public static InetSocketAddress getResolved(InetSocketAddress unresolved) throws UnknownHostException {
+        return unresolved.isUnresolved()
+            ? new InetSocketAddress(InetAddress.getByName(unresolved.getHostName()), unresolved.getPort())
+            : unresolved;
+    }
 }
