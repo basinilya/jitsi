@@ -1,17 +1,26 @@
 package net.java.sip.communicator.plugin.portforward;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.Closeable;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
+import java.net.SocketException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.ice4j.pseudotcp.PseudoTcpSocket;
 import org.ice4j.pseudotcp.PseudoTcpSocketFactory;
@@ -76,20 +86,82 @@ public class PropfileUtils
         //
     }
 
+    private static final int MTU = 1300;
+
     private Map<String, Forward> forwardsByName = new HashMap<>();
     private Map<String, Contact> contactsByName = new HashMap<>();
 
     private final PseudoTcpSocketFactory pseudoTcpSocketFactory = new PseudoTcpSocketFactory();
 
+    private static long HALF = 4000000000000000000L;
+
+    public enum ControlCommand {
+        CONNECT
+    }
+
+    private static class ByteBufferOutputStream extends OutputStream
+    {
+        private final ByteBuffer buffer;
+
+        ByteBufferOutputStream(ByteBuffer buffer)
+        {
+            this.buffer = buffer;
+        }
+
+        public void write(int b) throws IOException
+        {
+            buffer.put((byte) b);
+        }
+    }
+
+    private static final int CONNECT_TIMEOUT = 15000;
+    private static final int MAX_COMMAND = 1000;
+
     public class Contact {
-        private Socket controlSocket;
-        private DatagramSocket datagramSocket;
-        private SocketAddress remoteAddress;
-        private long conversationId;
+
+        public Contact(DatagramSocket datagramSocket, SocketAddress remoteAddress, boolean accept) throws IOException {
+            this.datagramSocket = datagramSocket;
+            this.remoteAddress = remoteAddress;
+            controlSocket = pseudoTcpSocketFactory.createSocket(datagramSocket);
+            controlSocket.setConversationID(0L);
+            controlSocket.setMTU(MTU);
+            controlSocket.setDebugName("control");
+            if (accept) {
+                controlSocket.accept(CONNECT_TIMEOUT);
+            } else {
+                controlSocket.connect(remoteAddress, CONNECT_TIMEOUT);
+            }
+            controlOut =new BufferedOutputStream(controlSocket.getOutputStream());
+            controlIn = new DataInputStream(new BufferedInputStream(controlSocket.getInputStream()));
+        }
+        private final DatagramSocket datagramSocket;
+        private final PseudoTcpSocket controlSocket;
+        private final SocketAddress remoteAddress;
+        private final BufferedOutputStream controlOut;
+        private final DataInputStream controlIn;
+        private long listenCounter;
 
         public long getNextConversationId(String forwardName) throws Exception {
-            DataOutputStream out = new DataOutputStream(controlSocket.getOutputStream());
-            return 0;
+            Objects.requireNonNull(forwardName);
+            listenCounter++;
+
+            ByteBuffer bb = ByteBuffer.allocate(MAX_COMMAND);
+            @SuppressWarnings("resource")
+            DataOutputStream message = new DataOutputStream(new ByteBufferOutputStream(bb));
+
+            message.writeShort(0);
+            message.writeUTF(ControlCommand.CONNECT.name());
+            message.writeUTF(forwardName);
+            message.writeLong(listenCounter);
+            int payloadLength = bb.position() - 2;
+            bb.putShort(0, (short)payloadLength);
+            bb.flip();
+
+            byte[] arr = bb.array();
+            controlOut.write(arr, 0, bb.limit());
+            controlOut.flush();
+
+            return listenCounter;
         }
         public DatagramSocket getDatagramSocket()
         {
@@ -111,6 +183,17 @@ public class PropfileUtils
         load();
     }
 
+    public static void closeQuietly(Closeable resource) {
+        if (resource != null) {
+        try
+        {
+            resource.close();
+        }
+        catch (IOException e)
+        {
+        }
+        }
+    }
     public class Forward
     {
         private final String name;
@@ -123,33 +206,71 @@ public class PropfileUtils
             InetSocketAddress resolved = getResolved(address);
             ServerSocket ss = new ServerSocket(resolved.getPort(), 10, resolved.getAddress());
             for (;;) {
-                Socket sock = ss.accept();
+                Socket leftSock = ss.accept();
+                PseudoTcpSocket rightSock = null;
                 boolean ok = false;
                 try {
                     Contact contact = getConnectedContact(contactName);
-                    long conversationID = contact.getNextConversationId(name);
                     DatagramSocket dgramSock = contact.getDatagramSocket();
-                    PseudoTcpSocket socket = pseudoTcpSocketFactory.createSocket(dgramSock);
-                    socket.setConversationID(conversationID);
-                    socket.setMTU(1500);
-                    socket.setDebugName(name + "-" + conversationID);
-                    if (listen) {
-                        //
-                    } else {
-                        SocketAddress remoteAddr = contact.getRemoteAddress();
-                        socket.connect(remoteAddr, 15000);
-                    }
+                    rightSock = pseudoTcpSocketFactory.createSocket(dgramSock);
+                    rightSock.setMTU(MTU);
+                    long conversationID = contact.getNextConversationId(name);
+                    rightSock.setConversationID(conversationID);
+                    String debugName = name + "-" + conversationID;
+                    rightSock.setDebugName(debugName);
+                    rightSock.accept(CONNECT_TIMEOUT);
+                    AtomicInteger refCount = new AtomicInteger(2);
+                    startPump(leftSock, rightSock, refCount, "==> " + debugName);
+                    startPump(rightSock, leftSock, refCount, "<== " + debugName);
                     ok = true;
                 } catch (Exception e) {
                     continue;
                 } finally {
                     if (!ok) {
-                        sock.close();
+                        closeQuietly(leftSock);
+                        closeQuietly(rightSock);
                     }
                 }
             }
         }
 
+        public void startPump(final Socket readSock, final Socket writeSock, final AtomicInteger refCount, String name) {
+            Objects.requireNonNull(readSock);
+            Objects.requireNonNull(writeSock);
+            Thread t = new Thread(new Runnable() {
+
+                @Override
+                public void run()
+                {
+                    try
+                    {
+                        try {
+                            InputStream in = readSock.getInputStream();
+                            OutputStream out = writeSock.getOutputStream();
+                            byte[] buf = new byte[MTU];
+                            int nb;
+                            while (-1 != (nb = in.read(buf))) {
+                                out.write(buf, 0, nb);
+                                out.flush();
+                            }
+                        } finally {
+                            writeSock.shutdownOutput();
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        e.printStackTrace();
+                    } finally {
+                        if (refCount.decrementAndGet() == 0) {
+                            closeQuietly(readSock);
+                            closeQuietly(writeSock);
+                        }
+                    }
+                }                
+            }, name);
+            t.start();
+        }
+        
         public void start() {
             if (!listen) {
                 return;
@@ -168,8 +289,7 @@ public class PropfileUtils
                         e.printStackTrace();
                     }
                 }
-            });
-            listenThread.setName("forward-" + name);
+            }, "forward-" + name);
             listenThread.start();
         }
         
