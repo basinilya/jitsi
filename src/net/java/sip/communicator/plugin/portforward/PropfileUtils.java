@@ -30,6 +30,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.ice4j.pseudotcp.PseudoTcpSocket;
@@ -76,31 +80,37 @@ public class PropfileUtils
         }
     }
 
-    public void addForward(Forward forward) {
+    public void addForward(Forward forward)
+    {
         forwardsByName.put(forward.name, forward);
         forward.start();
     }
 
-    //public Forward getByContact
-    //private Map<String, Forward> by
-    public void contactStatusChange(String contact, boolean online) {
+    // public Forward getByContact
+    // private Map<String, Forward> by
+    public void contactStatusChange(String contact, boolean online)
+    {
         //
     }
 
     private static final int MTU = 1300;
 
     private Map<String, Forward> forwardsByName = new HashMap<>();
+
     private Map<String, Contact> contactsByName = new HashMap<>();
 
-    private final PseudoTcpSocketFactory pseudoTcpSocketFactory = new PseudoTcpSocketFactory();
+    private final PseudoTcpSocketFactory pseudoTcpSocketFactory =
+        new PseudoTcpSocketFactory();
 
     private static long HALF = 4000000000000000000L;
 
-    public enum ControlCommand {
+    public enum ControlCommand
+    {
         CONNECT
     }
 
-    private static class ByteBufferOutputStream extends OutputStream
+    private static class ByteBufferOutputStream
+        extends OutputStream
     {
         private final ByteBuffer buffer;
 
@@ -116,26 +126,40 @@ public class PropfileUtils
     }
 
     private static final int CONNECT_TIMEOUT = 15000;
+
     private static final int MAX_COMMAND = 1000;
 
-    public class Contact {
+    private final ExecutorService executorService =
+        Executors.newCachedThreadPool();
 
-        public Contact(DatagramSocket datagramSocket, SocketAddress remoteAddress, boolean accept) throws IOException {
+    public class Contact
+    {
+
+        public Contact(DatagramSocket datagramSocket,
+            SocketAddress remoteAddress, boolean accept)
+            throws IOException
+        {
             this.datagramSocket = datagramSocket;
             this.remoteAddress = remoteAddress;
             controlSocket = pseudoTcpSocketFactory.createSocket(datagramSocket);
             controlSocket.setConversationID(0L);
             controlSocket.setMTU(MTU);
             controlSocket.setDebugName("control");
-            if (accept) {
+            if (accept)
+            {
                 controlSocket.accept(CONNECT_TIMEOUT);
-            } else {
+            }
+            else
+            {
                 listenCounter = HALF;
                 controlSocket.connect(remoteAddress, CONNECT_TIMEOUT);
             }
-            controlOut = new BufferedOutputStream(controlSocket.getOutputStream());
-            controlIn = new DataInputStream(new BufferedInputStream(controlSocket.getInputStream()));
-            controlThread = new Thread(new Runnable() {
+            controlOut =
+                new BufferedOutputStream(controlSocket.getOutputStream());
+            controlIn = new DataInputStream(
+                new BufferedInputStream(controlSocket.getInputStream()));
+            controlThread = new Thread(new Runnable()
+            {
                 @Override
                 public void run()
                 {
@@ -151,72 +175,138 @@ public class PropfileUtils
             }, "controlThread-" + remoteAddress.toString());
             controlThread.start();
         }
+
         private final DatagramSocket datagramSocket;
+
         private final PseudoTcpSocket controlSocket;
+
         private final SocketAddress remoteAddress;
+
         private final BufferedOutputStream controlOut;
+
         private final DataInputStream controlIn;
+
         private long listenCounter;
+
         private Thread controlThread;
 
-        private void controlLoop() throws Exception {
-            for(;;) {
+        private void controlLoop() throws Exception
+        {
+            for (;;)
+            {
                 int payloadLength = controlIn.readShort();
-                if (payloadLength < 1 || payloadLength > MAX_COMMAND) {
-                    throw new Exception("Allowed payload size between " + 1 + " and "
-                        + MAX_COMMAND + ", actual: " + payloadLength);
+                if (payloadLength < 1 || payloadLength > MAX_COMMAND)
+                {
+                    throw new Exception("Allowed payload size between " + 1
+                        + " and " + MAX_COMMAND + ", actual: " + payloadLength);
                 }
-                byte[] payload = new byte[payloadLength];
+                final byte[] payload = new byte[payloadLength];
                 controlIn.readFully(payload);
-                DataInputStream msgIn = new DataInputStream(new ByteArrayInputStream(payload));
-                String commandName = msgIn.readUTF();
-                ControlCommand command = ControlCommand.valueOf(commandName);
-                switch (command) {
-                case CONNECT:
+                Thread serveThread = new Thread(new Runnable()
+                {
+                    @Override
+                    public void run()
                     {
-                        String forwardName = msgIn.readUTF();
-                        long conversationID = msgIn.readLong();
-                        Forward forward = forwardsByName.get(forwardName);
-                        PseudoTcpSocket rightSock = pseudoTcpSocketFactory.createSocket(datagramSocket);
-                        rightSock.setMTU(MTU);
-                        rightSock.setConversationID(conversationID);
-                        String debugName = forwardName + "-" + conversationID + "-" + "C";
-                        rightSock.setDebugName(debugName);
-                        rightSock.connect(remoteAddress, CONNECT_TIMEOUT);
-                        if (forward.isListen()) {
-                            rightSock.close();
-                        } else {
-                            InetSocketAddress unresolved = forward.getAddress();
-                            InetSocketAddress resolved =
-                                unresolved.isUnresolved()
-                                    ? new InetSocketAddress(InetAddress.getByName(unresolved.getHostName()), unresolved.getPort())
-                                    : unresolved;
-                            Socket leftSock = new Socket(resolved.getAddress(), resolved.getPort());
-                            AtomicInteger refCount = new AtomicInteger(2);
-                            startPump(leftSock, rightSock, refCount, "==> " + debugName);
-                            startPump(rightSock, leftSock, refCount, "<== " + debugName);
-                           // ok = true;                            
+                        try
+                        {
+                            serve(payload);
+                        }
+                        catch (Exception e)
+                        {
+                            e.printStackTrace();
                         }
                     }
-                    break;
-                }
+                }, "serveThread");
+                serveThread.start();
             }
         }
 
-        public long getNextConversationId(String forwardName) throws Exception {
+        private void serve(byte[] payload) throws Exception
+        {
+            DataInputStream msgIn =
+                new DataInputStream(new ByteArrayInputStream(payload));
+            String commandName = msgIn.readUTF();
+            ControlCommand command = ControlCommand.valueOf(commandName);
+            switch (command)
+            {
+            case CONNECT:
+            {
+                String forwardName = msgIn.readUTF();
+                long conversationID = msgIn.readLong();
+                final Forward forward = forwardsByName.get(forwardName);
+                Future<Socket> fut = null;
+                if (!forward.isListen())
+                {
+                    fut = executorService.submit(new Callable<Socket>()
+                    {
+                        @Override
+                        public Socket call() throws Exception
+                        {
+                            InetSocketAddress unresolved = forward.getAddress();
+                            InetSocketAddress resolved =
+                                unresolved.isUnresolved()
+                                    ? new InetSocketAddress(
+                                        InetAddress.getByName(
+                                            unresolved.getHostName()),
+                                        unresolved.getPort())
+                                    : unresolved;
+                            return new Socket(resolved.getAddress(),
+                                resolved.getPort());
+                        }
+                    });
+                }
+                Socket rightSock = null;
+                PseudoTcpSocket leftSock =
+                    pseudoTcpSocketFactory.createSocket(datagramSocket);
+                boolean ok = false;
+                try
+                {
+                    leftSock.setMTU(MTU);
+                    leftSock.setConversationID(conversationID);
+                    String debugName =
+                        forwardName + "-" + conversationID + "-" + "C";
+                    leftSock.setDebugName(debugName);
+                    leftSock.connect(remoteAddress, CONNECT_TIMEOUT);
+                    if (!forward.isListen())
+                    {
+                        rightSock = fut.get();
+                        AtomicInteger refCount = new AtomicInteger(2);
+                        startPump(leftSock, rightSock, refCount,
+                            debugName + " ==>");
+                        startPump(rightSock, leftSock, refCount,
+                            debugName + " <==");
+                        ok = true;
+                    }
+                }
+                finally
+                {
+                    if (!ok)
+                    {
+                        closeQuietly(leftSock);
+                        closeQuietly(rightSock);
+                    }
+                }
+            }
+                break;
+            }
+        }
+
+        public long getNextConversationId(String forwardName) throws Exception
+        {
             Objects.requireNonNull(forwardName);
             listenCounter++;
 
             ByteBuffer bb = ByteBuffer.allocate(MAX_COMMAND);
             @SuppressWarnings("resource")
-            DataOutputStream message = new DataOutputStream(new ByteBufferOutputStream(bb));
+            DataOutputStream message =
+                new DataOutputStream(new ByteBufferOutputStream(bb));
 
             message.writeShort(0);
             message.writeUTF(ControlCommand.CONNECT.name());
             message.writeUTF(forwardName);
             message.writeLong(listenCounter);
             int payloadLength = bb.position() - 2;
-            bb.putShort(0, (short)payloadLength);
+            bb.putShort(0, (short) payloadLength);
             bb.flip();
 
             byte[] arr = bb.array();
@@ -225,72 +315,86 @@ public class PropfileUtils
 
             return listenCounter;
         }
+
         public DatagramSocket getDatagramSocket()
         {
             return datagramSocket;
         }
+
         public SocketAddress getRemoteAddress()
         {
             return remoteAddress;
         }
     }
-    
-    public Contact getConnectedContact(String contactName) throws Exception {
+
+    public Contact getConnectedContact(String contactName) throws Exception
+    {
         Contact contact = contactsByName.get(contactName);
         return contact;
     }
-    
+
     public void start() throws Exception
     {
         load();
     }
 
-    public static void closeQuietly(Closeable resource) {
-        if (resource != null) {
-        try
+    public static void closeQuietly(Closeable resource)
+    {
+        if (resource != null)
         {
-            resource.close();
-        }
-        catch (IOException e)
-        {
-        }
+            try
+            {
+                resource.close();
+            }
+            catch (IOException e)
+            {
+            }
         }
     }
-    
 
-    public static void startPump(final Socket readSock, final Socket writeSock, final AtomicInteger refCount, String name) {
+    public static void startPump(final Socket readSock, final Socket writeSock,
+        final AtomicInteger refCount, String name)
+    {
         Objects.requireNonNull(readSock);
         Objects.requireNonNull(writeSock);
-        Thread t = new Thread(new Runnable() {
+        Thread t = new Thread(new Runnable()
+        {
 
             @Override
             public void run()
             {
                 try
                 {
-                    try {
+                    try
+                    {
                         InputStream in = readSock.getInputStream();
                         OutputStream out = writeSock.getOutputStream();
                         byte[] buf = new byte[MTU];
                         int nb;
-                        while (-1 != (nb = in.read(buf))) {
+                        while (-1 != (nb = in.read(buf)))
+                        {
                             out.write(buf, 0, nb);
                             out.flush();
                         }
-                    } finally {
+                    }
+                    finally
+                    {
                         writeSock.shutdownOutput();
                     }
                 }
                 catch (Exception e)
                 {
                     e.printStackTrace();
-                } finally {
-                    if (refCount.decrementAndGet() == 0) {
+                }
+                finally
+                {
+                    if (refCount.decrementAndGet() == 0)
+                    {
                         closeQuietly(readSock);
                         closeQuietly(writeSock);
                     }
                 }
-            }                
+            }
         }, name);
         t.start();
     }
@@ -298,19 +402,25 @@ public class PropfileUtils
     public class Forward
     {
         private final String name;
+
         private InetSocketAddress address;
+
         private String contactName;
 
-        private Thread listenThread; 
+        private Thread listenThread;
 
-        private void acceptLoop() throws Exception {
+        private void acceptLoop() throws Exception
+        {
             InetSocketAddress resolved = getResolved(address);
-            ServerSocket ss = new ServerSocket(resolved.getPort(), 10, resolved.getAddress());
-            for (;;) {
+            ServerSocket ss =
+                new ServerSocket(resolved.getPort(), 10, resolved.getAddress());
+            for (;;)
+            {
                 Socket leftSock = ss.accept();
                 PseudoTcpSocket rightSock = null;
                 boolean ok = false;
-                try {
+                try
+                {
                     Contact contact = getConnectedContact(contactName);
                     DatagramSocket dgramSock = contact.getDatagramSocket();
                     rightSock = pseudoTcpSocketFactory.createSocket(dgramSock);
@@ -321,22 +431,31 @@ public class PropfileUtils
                     rightSock.setDebugName(debugName);
                     rightSock.accept(CONNECT_TIMEOUT);
                     AtomicInteger refCount = new AtomicInteger(2);
-                    startPump(leftSock, rightSock, refCount, "==> " + debugName);
-                    startPump(rightSock, leftSock, refCount, "<== " + debugName);
+                    startPump(leftSock, rightSock, refCount,
+                        "==> " + debugName);
+                    startPump(rightSock, leftSock, refCount,
+                        "<== " + debugName);
                     ok = true;
-                } catch (Exception e) {
+                }
+                catch (Exception e)
+                {
                     continue;
-                } finally {
-                    if (!ok) {
+                }
+                finally
+                {
+                    if (!ok)
+                    {
                         closeQuietly(leftSock);
                         closeQuietly(rightSock);
                     }
                 }
             }
         }
-        
-        public void start() {
-            if (!listen) {
+
+        public void start()
+        {
+            if (!listen)
+            {
                 return;
             }
             listenThread = new Thread(new Runnable()
@@ -356,8 +475,9 @@ public class PropfileUtils
             }, "forward-" + name);
             listenThread.start();
         }
-        
-        public Forward(String name) throws Exception
+
+        public Forward(String name)
+            throws Exception
         {
             this.name = Objects.requireNonNull(name);
             parseAddress();
@@ -370,7 +490,8 @@ public class PropfileUtils
             return contactName;
         }
 
-        private void parseContact() {
+        private void parseContact()
+        {
             contactName = getProp("contact");
             Objects.requireNonNull(contactName);
         }
@@ -380,7 +501,8 @@ public class PropfileUtils
             return address;
         }
 
-        private void parseAddress() throws URISyntaxException {
+        private void parseAddress() throws URISyntaxException
+        {
             address = parseAddress0(getProp("address"), 0);
         }
 
@@ -392,7 +514,8 @@ public class PropfileUtils
             return listen;
         }
 
-        private void parseListen() {
+        private void parseListen()
+        {
             listen = !Boolean.FALSE.equals(getBoolean("listen"));
         }
 
@@ -408,7 +531,8 @@ public class PropfileUtils
         {
             String s = getProp(prop);
             return Boolean.toString(false).equalsIgnoreCase(s) ? Boolean.FALSE
-                : Boolean.toString(true).equalsIgnoreCase(s) ? Boolean.TRUE : null;
+                : Boolean.toString(true).equalsIgnoreCase(s) ? Boolean.TRUE
+                    : null;
         }
 
         public String getProp(String prop)
@@ -453,10 +577,13 @@ public class PropfileUtils
         return InetSocketAddress.createUnresolved(host, port);
     }
 
-    
-    public static InetSocketAddress getResolved(InetSocketAddress unresolved) throws UnknownHostException {
+    public static InetSocketAddress getResolved(InetSocketAddress unresolved)
+        throws UnknownHostException
+    {
         return unresolved.isUnresolved()
-            ? new InetSocketAddress(InetAddress.getByName(unresolved.getHostName()), unresolved.getPort())
+            ? new InetSocketAddress(
+                InetAddress.getByName(unresolved.getHostName()),
+                unresolved.getPort())
             : unresolved;
     }
 }
