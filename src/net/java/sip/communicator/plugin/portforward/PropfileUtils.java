@@ -414,41 +414,51 @@ public class PropfileUtils
             InetSocketAddress resolved = getResolved(address);
             ServerSocket ss =
                 new ServerSocket(resolved.getPort(), 10, resolved.getAddress());
-            for (;;)
+            try
             {
-                Socket leftSock = ss.accept();
-                PseudoTcpSocket rightSock = null;
-                boolean ok = false;
-                try
+                for (;;)
                 {
-                    Contact contact = getConnectedContact(contactName);
-                    DatagramSocket dgramSock = contact.getDatagramSocket();
-                    rightSock = pseudoTcpSocketFactory.createSocket(dgramSock);
-                    rightSock.setMTU(MTU);
-                    long conversationID = contact.getNextConversationId(name);
-                    rightSock.setConversationID(conversationID);
-                    String debugName = name + "-" + conversationID + "-" + "A";
-                    rightSock.setDebugName(debugName);
-                    rightSock.accept(CONNECT_TIMEOUT);
-                    AtomicInteger refCount = new AtomicInteger(2);
-                    startPump(leftSock, rightSock, refCount,
-                        "==> " + debugName);
-                    startPump(rightSock, leftSock, refCount,
-                        "<== " + debugName);
-                    ok = true;
-                }
-                catch (Exception e)
-                {
-                    continue;
-                }
-                finally
-                {
-                    if (!ok)
+                    Socket leftSock = ss.accept();
+                    PseudoTcpSocket rightSock = null;
+                    boolean ok = false;
+                    try
                     {
-                        closeQuietly(leftSock);
-                        closeQuietly(rightSock);
+                        Contact contact = getConnectedContact(contactName);
+                        DatagramSocket dgramSock = contact.getDatagramSocket();
+                        rightSock =
+                            pseudoTcpSocketFactory.createSocket(dgramSock);
+                        rightSock.setMTU(MTU);
+                        long conversationID =
+                            contact.getNextConversationId(name);
+                        rightSock.setConversationID(conversationID);
+                        String debugName =
+                            name + "-" + conversationID + "-" + "A";
+                        rightSock.setDebugName(debugName);
+                        rightSock.accept(CONNECT_TIMEOUT);
+                        AtomicInteger refCount = new AtomicInteger(2);
+                        startPump(leftSock, rightSock, refCount,
+                            "==> " + debugName);
+                        startPump(rightSock, leftSock, refCount,
+                            "<== " + debugName);
+                        ok = true;
+                    }
+                    catch (Exception e)
+                    {
+                        continue;
+                    }
+                    finally
+                    {
+                        if (!ok)
+                        {
+                            closeQuietly(leftSock);
+                            closeQuietly(rightSock);
+                        }
                     }
                 }
+            }
+            finally
+            {
+                ss.close();
             }
         }
 
