@@ -1,5 +1,6 @@
 package net.java.sip.communicator.plugin.portforward;
 
+import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.PREFIX;
 import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.MTU;
 import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.closeQuietly;
 import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.getResolved;
@@ -39,8 +40,6 @@ import org.ice4j.pseudotcp.PseudoTcpSocketFactory;
 public class PortForwardManager
 {
 
-    private static final String PREFIX = "portforward.";
-
     private Properties props;
 
     private void load() throws Exception
@@ -73,7 +72,7 @@ public class PortForwardManager
     {
         boolean ok = ts.entering("addForward", forward);
         try {
-            forwardsByName.put(forward.name, forward);
+            forwardsByName.put(forward.getName(), forward);
             forward.start();
             ok = true;
         } finally {
@@ -364,12 +363,8 @@ public class PortForwardManager
 
     private class Forward
     {
-        private final String name;
 
-        private InetSocketAddress address;
-
-        private String contactName;
-
+        private final ForwardConfig conf;
         private Thread listenThread;
 
         private void acceptLoop() throws Exception
@@ -378,7 +373,7 @@ public class PortForwardManager
             ServerSocket ss = null;
             try
             {
-                InetSocketAddress resolved = getResolved(address);
+                InetSocketAddress resolved = getResolved(conf.getAddress());
                 ss = new ServerSocket(resolved.getPort(), 10, resolved.getAddress());
                 for (;;)
                 {
@@ -400,16 +395,16 @@ public class PortForwardManager
             PseudoTcpSocket rightSock = null;
             try
             {
-                Contact contact = getConnectedContact(contactName);
+                Contact contact = getConnectedContact(conf.getContactName());
                 DatagramSocket dgramSock = contact.getDatagramSocket();
                 rightSock =
                     pseudoTcpSocketFactory.createSocket(dgramSock);
                 rightSock.setMTU(MTU);
                 long conversationID =
-                    contact.getNextConversationId(name);
+                    contact.getNextConversationId(conf.getName());
                 rightSock.setConversationID(conversationID);
                 String debugName =
-                    name + "-" + conversationID + "-" + "A";
+                    conf.getName() + "-" + conversationID + "-" + "A";
                 rightSock.setDebugName(debugName);
                 rightSock.accept(CONNECT_TIMEOUT);
                 AtomicInteger refCount = new AtomicInteger(2);
@@ -434,11 +429,25 @@ public class PortForwardManager
             }
         }
 
+        private String getContactName() {
+            return conf.getContactName();
+        }
+        private String getName() {
+            return conf.getName();
+        }
+        private boolean isListen() {
+            return conf.isListen();
+        }
+
+        private InetSocketAddress getAddress() {
+            return conf.getAddress();
+        }
+        
         private void start()
         {
             boolean ok = ts.entering("start");
             try {
-                if (!listen)
+                if (!isListen())
                 {
                     return;
                 }
@@ -460,7 +469,7 @@ public class PortForwardManager
                             ts.exiting(Thread.currentThread().getName() + ".run", "void", ok);
                         }
                     }
-                }, "listenThread-" + name);
+                }, "listenThread-" + conf.getName());
                 listenThread.start();
                 ok = true;
             } finally {
@@ -475,71 +484,12 @@ public class PortForwardManager
         {
             boolean ok = ts.entering("Forward", name);
             try {
-                this.name = Objects.requireNonNull(name);
-                parseAddress();
-                parseContact();
-                parseListen();
+                this.conf = new ForwardConfig(props, name);
                 ok = true;
             } finally {
                 ts.exiting("Forward", this, ok);
             }
         }
-
-        private String getContactName()
-        {
-            return contactName;
-        }
-
-        private void parseContact()
-        {
-            contactName = getProp("contact");
-            Objects.requireNonNull(contactName);
-        }
-
-        private InetSocketAddress getAddress()
-        {
-            return address;
-        }
-
-        private void parseAddress() throws URISyntaxException
-        {
-            address = parseAddressString(getProp("address"), 0);
-        }
-
-        /**
-         * @return should we listen, default true
-         */
-        private boolean isListen()
-        {
-            return listen;
-        }
-
-        private void parseListen()
-        {
-            listen = !Boolean.FALSE.equals(getBoolean("listen"));
-        }
-
-        private boolean listen;
-
-        /**
-         * 
-         * @param prop
-         * @return true or false if and only if the string value is exactly
-         *         "true" or "false", otherwise null
-         */
-        private Boolean getBoolean(String prop)
-        {
-            String s = getProp(prop);
-            return Boolean.toString(false).equalsIgnoreCase(s) ? Boolean.FALSE
-                : Boolean.toString(true).equalsIgnoreCase(s) ? Boolean.TRUE
-                    : null;
-        }
-
-        private String getProp(String prop)
-        {
-            return props.getProperty(PREFIX + name + "." + prop);
-        }
-
     }
 
     public static void main(String[] args) throws Exception

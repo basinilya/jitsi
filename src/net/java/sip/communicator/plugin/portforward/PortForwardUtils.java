@@ -21,6 +21,8 @@ public final class PortForwardUtils
 {
     public static final int MTU = 1300;
 
+    public static final String PREFIX = "portforward.";
+
 
     private PortForwardUtils()
     {
