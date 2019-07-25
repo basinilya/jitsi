@@ -1,34 +1,32 @@
 package net.java.sip.communicator.plugin.portforward;
 
+import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.MTU;
+import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.closeQuietly;
+import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.getResolved;
+import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.listSubKeys;
+import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.parseAddressString;
+import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.startPump;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
-import java.io.Closeable;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.DatagramSocket;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
-import java.net.SocketException;
-import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -38,25 +36,10 @@ import java.util.logging.Logger;
 import org.ice4j.pseudotcp.PseudoTcpSocket;
 import org.ice4j.pseudotcp.PseudoTcpSocketFactory;
 
-public class PropfileUtils
+public class PortForwardManager
 {
 
     private static final String PREFIX = "portforward.";
-
-    private static Set<String> listSubKeys(Properties props, String prefix)
-    {
-        Set<String> res = new HashSet<>();
-        for (String x : props.stringPropertyNames())
-        {
-            if (x.startsWith(prefix))
-            {
-                String[] a = x.substring(prefix.length()).split("[.]", 2);
-                String key = a[0];
-                res.add(key);
-            }
-        }
-        return res;
-    }
 
     private Properties props;
 
@@ -105,8 +88,6 @@ public class PropfileUtils
         //
     }
 
-    private static final int MTU = 1300;
-
     private Map<String, Forward> forwardsByName = new HashMap<>();
 
     private Map<String, Contact> contactsByName = new HashMap<>();
@@ -121,22 +102,6 @@ public class PropfileUtils
         CONNECT
     }
 
-    private static class ByteBufferOutputStream
-        extends OutputStream
-    {
-        private final ByteBuffer buffer;
-
-        ByteBufferOutputStream(ByteBuffer buffer)
-        {
-            this.buffer = buffer;
-        }
-
-        public void write(int b) throws IOException
-        {
-            buffer.put((byte) b);
-        }
-    }
-
     private static final int CONNECT_TIMEOUT = 15000;
 
     private static final int MAX_COMMAND = 1000;
@@ -146,7 +111,7 @@ public class PropfileUtils
 
     private class Contact
     {
-        private final TraceSupport ts = new TraceSupport(this);
+        private final TraceSupport ts = new TraceSupport(this, LOGGER);
 
         private Contact(DatagramSocket datagramSocket, SocketAddress remoteAddress, boolean accept)
             throws IOException
@@ -287,13 +252,7 @@ public class PropfileUtils
                             boolean ok = ts.entering("connectTask-("+ unresolved +").call");
                             Socket res = null;
                             try {
-                                InetSocketAddress resolved =
-                                    unresolved.isUnresolved()
-                                        ? new InetSocketAddress(
-                                            InetAddress.getByName(
-                                                unresolved.getHostName()),
-                                            unresolved.getPort())
-                                        : unresolved;
+                                InetSocketAddress resolved = getResolved(unresolved);
                                 res = new Socket(resolved.getAddress(),
                                     resolved.getPort());
                                 ok = true;
@@ -377,7 +336,7 @@ public class PropfileUtils
         }
     }
 
-    private final TraceSupport ts = new TraceSupport(this);
+    private final TraceSupport ts = new TraceSupport(this, LOGGER);
     
     private Contact getConnectedContact(String contactName) throws Exception
     {
@@ -400,82 +359,6 @@ public class PropfileUtils
             ok = true;
         } finally {
             ts.exiting("start", "void", ok);
-        }
-    }
-
-    private static void closeQuietly(Closeable resource)
-    {
-        boolean ok = staticEntering("closeQuietly", resource);
-        try {
-            if (resource != null)
-            {
-                try
-                {
-                    resource.close();
-                }
-                catch (IOException e)
-                {
-                }
-            }
-            ok = true;
-        } finally {
-            staticExiting("closeQuietly", "void", ok);
-        }
-    }
-
-    private static void startPump(final Socket readSock, final Socket writeSock,
-        final AtomicInteger refCount, String name)
-    {
-        boolean ok = staticEntering("startPump", readSock, writeSock, refCount, name);
-        try {
-            Objects.requireNonNull(readSock);
-            Objects.requireNonNull(writeSock);
-            Thread t = new Thread(new Runnable()
-            {
-    
-                @Override
-                public void run()
-                {
-                    boolean ok = staticEntering(Thread.currentThread().getName() + ".run");
-                    try
-                    {
-                        try
-                        {
-                            InputStream in = readSock.getInputStream();
-                            OutputStream out = writeSock.getOutputStream();
-                            byte[] buf = new byte[MTU];
-                            int nb;
-                            while (-1 != (nb = in.read(buf)))
-                            {
-                                out.write(buf, 0, nb);
-                                out.flush();
-                            }
-                        }
-                        finally
-                        {
-                            writeSock.shutdownOutput();
-                        }
-                        ok = true;
-                    }
-                    catch (Exception e)
-                    {
-                        throw new RuntimeException(e);
-                    }
-                    finally
-                    {
-                        if (refCount.decrementAndGet() == 0)
-                        {
-                            closeQuietly(readSock);
-                            closeQuietly(writeSock);
-                        }
-                        staticExiting(Thread.currentThread().getName() + ".run", "void", ok);
-                    }
-                }
-            }, name);
-            t.start();
-            ok = true;
-        } finally {
-            staticExiting("startPump", "void", ok);
         }
     }
 
@@ -585,7 +468,7 @@ public class PropfileUtils
             }
         }
 
-        private final TraceSupport ts = new TraceSupport(this);
+        private final TraceSupport ts = new TraceSupport(this, LOGGER);
         
         private Forward(String name)
             throws Exception
@@ -620,7 +503,7 @@ public class PropfileUtils
 
         private void parseAddress() throws URISyntaxException
         {
-            address = parseAddress0(getProp("address"), 0);
+            address = parseAddressString(getProp("address"), 0);
         }
 
         /**
@@ -661,120 +544,16 @@ public class PropfileUtils
 
     public static void main(String[] args) throws Exception
     {
-        PropfileUtils inst = new PropfileUtils();
+        PortForwardManager inst = new PortForwardManager();
         inst.start();
         System.exit(0);
-        InetSocketAddress xxx = parseAddress0("[::]", 0);
+        InetSocketAddress xxx = parseAddressString("[::]", 0);
         System.out.println(xxx.getHostName());
         System.out.println(xxx.getPort());
         new InetSocketAddress(xxx.getHostName(), xxx.getPort());
         // props.prop
     }
 
-    private static InetSocketAddress parseAddress0(final String addressString,
-        final int defaultPort /**/)
-        throws URISyntaxException
-    {
-        boolean ok = staticEntering("parseAddress0", addressString, defaultPort);
-        InetSocketAddress res = null;
-        try {
-            final URI uri = new URI("my://" + addressString);
-    
-            final String host = uri.getHost();
-            int port = uri.getPort();
-    
-            if (port == -1)
-            {
-                port = defaultPort;
-            }
-    
-            if (host == null || port == -1)
-            {
-                throw new URISyntaxException(uri.toString(),
-                    "must have host or no default port specified");
-            }
-    
-            res = InetSocketAddress.createUnresolved(host, port);
-            ok = true;
-            return res;
-        } finally {
-            staticExiting("parseAddress0", res, ok);
-        }
-    }
-
-    private static InetSocketAddress getResolved(InetSocketAddress unresolved)
-        throws UnknownHostException
-    {
-        boolean ok = staticEntering("getResolved", unresolved);
-        InetSocketAddress res = null;
-        try {
-            res =
-                unresolved.isUnresolved()
-                    ? new InetSocketAddress(
-                        InetAddress.getByName(unresolved.getHostName()),
-                        unresolved.getPort())
-                    : unresolved;
-            ok = true;
-            return res;
-        } finally {
-            staticExiting("getResolved", res, ok);
-        }
-    }
-
-    
-    private static class TraceSupport {
-        private final Object self;
-
-        private TraceSupport(Object self) {
-            this.self = self;
-        }
-
-        private boolean entering(String sourceMethod, Object... params)
-        {
-            LOGGER.entering(self.getClass().getName(), sourceMethod, prepend(params, self));
-            return false;
-        }
-
-        private void exiting(String sourceMethod, Object res, boolean ok)
-        {
-            if (ok) {
-                LOGGER.exiting(self.getClass().getName(), sourceMethod, res);
-            } else {
-                LOGGER.exiting(self.getClass().getName(), sourceMethod);
-            }
-        }
-
-    }
-    
-    private static boolean staticEntering(String sourceMethod, Object... params)
-    {
-        LOGGER.entering(PropfileUtils.class.getName(), sourceMethod, params);
-        return false;
-    }
-
-    private static void staticExiting(String sourceMethod, Object res, boolean ok)
-    {
-        if (ok) {
-            LOGGER.exiting(PropfileUtils.class.getName(), sourceMethod, res);
-        } else {
-            LOGGER.exiting(PropfileUtils.class.getName(), sourceMethod);
-        }
-    }
-
-    public static Object[] prepend(Object[] a, Object b)
-    {
-        if (a == null)
-        {
-            return new Object[]{ b };
-        }
-
-        int length = a.length;
-        Object[] result = new Object[length + 1];
-        System.arraycopy(a, 0, result, 1, length);
-        result[0] = b;
-        return result;
-    }
-
     private static final Logger LOGGER =
-        Logger.getLogger(PropfileUtils.class.getName());
+        Logger.getLogger(PortForwardManager.class.getName());
 }
