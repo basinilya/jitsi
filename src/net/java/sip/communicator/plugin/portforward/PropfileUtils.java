@@ -62,7 +62,7 @@ public class PropfileUtils
 
     private void load() throws Exception
     {
-        boolean ok = entering("load");
+        boolean ok = ts.entering("load");
         try {
             props = new Properties();
             try (FileInputStream in = new FileInputStream(
@@ -82,19 +82,19 @@ public class PropfileUtils
             }
             ok = true;
         } finally {
-            exiting("load", "void", ok);
+            ts.exiting("load", "void", ok);
         }
     }
 
     private void addForward(Forward forward)
     {
-        boolean ok = entering("addForward", forward);
+        boolean ok = ts.entering("addForward", forward);
         try {
             forwardsByName.put(forward.name, forward);
             forward.start();
             ok = true;
         } finally {
-            exiting("addForward", "void", ok);
+            ts.exiting("addForward", "void", ok);
         }
     }
 
@@ -146,11 +146,12 @@ public class PropfileUtils
 
     private class Contact
     {
+        private final TraceSupport ts = new TraceSupport(this);
 
         private Contact(DatagramSocket datagramSocket, SocketAddress remoteAddress, boolean accept)
             throws IOException
         {
-            boolean ok = entering("Contact", datagramSocket, remoteAddress, accept);
+            boolean ok = ts.entering("Contact", datagramSocket, remoteAddress, accept);
             try {
                 this.datagramSocket = datagramSocket;
                 this.remoteAddress = remoteAddress;
@@ -189,7 +190,7 @@ public class PropfileUtils
                 controlThread.start();
                 ok = true;
             } finally {
-                exiting("Contact", this, ok);
+                ts.exiting("Contact", this, ok);
             }
         }
 
@@ -209,7 +210,7 @@ public class PropfileUtils
 
         private void controlLoop() throws Exception
         {
-            boolean ok = entering("controlLoop");
+            boolean ok = ts.entering("controlLoop");
             try {
                 for (;;)
                 {
@@ -240,13 +241,13 @@ public class PropfileUtils
                 }
                 // unreachable
             } finally {
-                exiting("controlLoop", "void", ok);
+                ts.exiting("controlLoop", "void", ok);
             }
         }
 
         private void serve(byte[] payload) throws Exception
         {
-            boolean ok = entering("serve", payload);
+            boolean ok = ts.entering("serve", payload);
             try {
                 DataInputStream msgIn =
                     new DataInputStream(new ByteArrayInputStream(payload));
@@ -260,12 +261,12 @@ public class PropfileUtils
                 }
                 ok = true;
             } finally {
-                exiting("serve", "void", ok);
+                ts.exiting("serve", "void", ok);
             }
         }
 
         private void serveConnect(DataInputStream msgIn) throws Exception        {
-            boolean ok = entering("serveConnect", msgIn);
+            boolean ok = ts.entering("serveConnect", msgIn);
             PseudoTcpSocket leftSock = null;
             Socket rightSock = null;
             Future<Socket> fut = null;
@@ -283,7 +284,7 @@ public class PropfileUtils
                         @Override
                         public Socket call() throws Exception
                         {
-                            boolean ok = entering("connectTask-("+ unresolved +").call");
+                            boolean ok = ts.entering("connectTask-("+ unresolved +").call");
                             Socket res = null;
                             try {
                                 InetSocketAddress resolved =
@@ -298,7 +299,7 @@ public class PropfileUtils
                                 ok = true;
                                 return res;
                             } finally {
-                                exiting("connectTask-("+ unresolved +").call", res, ok);
+                                ts. exiting("connectTask-("+ unresolved +").call", res, ok);
                             }
                         }
                     });
@@ -333,13 +334,13 @@ public class PropfileUtils
                         closeQuietly(fut.get());
                     }
                 }
-                exiting("serveConnect", "void", ok);
+                ts.exiting("serveConnect", "void", ok);
             }
         }
 
         private long getNextConversationId(String forwardName) throws Exception
         {
-            boolean ok = entering("getNextConversationId", forwardName);
+            boolean ok = ts.entering("getNextConversationId", forwardName);
             long res = 0;
             try {
                 Objects.requireNonNull(forwardName);
@@ -366,7 +367,7 @@ public class PropfileUtils
                 ok = true;
                 return res;
             } finally {
-                exiting("getNextConversationId", res, ok);
+                ts.exiting("getNextConversationId", res, ok);
             }
         }
 
@@ -376,33 +377,35 @@ public class PropfileUtils
         }
     }
 
+    private final TraceSupport ts = new TraceSupport(this);
+    
     private Contact getConnectedContact(String contactName) throws Exception
     {
-        boolean ok = entering("getConnectedContact", contactName);
+        boolean ok = ts.entering("getConnectedContact", contactName);
         Contact res = null;
         try {
             res = contactsByName.get(contactName);
             ok = true;
             return res;
         } finally {
-            exiting("getConnectedContact", res, ok);
+            ts.exiting("getConnectedContact", res, ok);
         }
     }
 
     private void start() throws Exception
     {
-        boolean ok = entering("start");
+        boolean ok = ts.entering("start");
         try {
             load();
             ok = true;
         } finally {
-            exiting("start", "void", ok);
+            ts.exiting("start", "void", ok);
         }
     }
 
     private static void closeQuietly(Closeable resource)
     {
-        boolean ok = entering("closeQuietly", resource);
+        boolean ok = staticEntering("closeQuietly", resource);
         try {
             if (resource != null)
             {
@@ -416,14 +419,14 @@ public class PropfileUtils
             }
             ok = true;
         } finally {
-            exiting("closeQuietly", "void", ok);
+            staticExiting("closeQuietly", "void", ok);
         }
     }
 
     private static void startPump(final Socket readSock, final Socket writeSock,
         final AtomicInteger refCount, String name)
     {
-        boolean ok = entering("startPump", readSock, writeSock, refCount, name);
+        boolean ok = staticEntering("startPump", readSock, writeSock, refCount, name);
         try {
             Objects.requireNonNull(readSock);
             Objects.requireNonNull(writeSock);
@@ -433,7 +436,7 @@ public class PropfileUtils
                 @Override
                 public void run()
                 {
-                    boolean ok = entering(Thread.currentThread().getName() + ".run");
+                    boolean ok = staticEntering(Thread.currentThread().getName() + ".run");
                     try
                     {
                         try
@@ -465,14 +468,14 @@ public class PropfileUtils
                             closeQuietly(readSock);
                             closeQuietly(writeSock);
                         }
-                        exiting(Thread.currentThread().getName() + ".run", "void", ok);
+                        staticExiting(Thread.currentThread().getName() + ".run", "void", ok);
                     }
                 }
             }, name);
             t.start();
             ok = true;
         } finally {
-            exiting("startPump", "void", ok);
+            staticExiting("startPump", "void", ok);
         }
     }
 
@@ -488,7 +491,7 @@ public class PropfileUtils
 
         private void acceptLoop() throws Exception
         {
-            boolean ok = entering("acceptLoop");
+            boolean ok = ts.entering("acceptLoop");
             ServerSocket ss = null;
             try
             {
@@ -504,13 +507,13 @@ public class PropfileUtils
             finally
             {
                 closeQuietly(ss);
-                exiting("acceptLoop", "void", ok);
+                ts.exiting("acceptLoop", "void", ok);
             }
         }
 
         private void serve(Socket leftSock)
         {
-            boolean ok = entering("serve", leftSock);
+            boolean ok = ts.entering("serve", leftSock);
             PseudoTcpSocket rightSock = null;
             try
             {
@@ -544,13 +547,13 @@ public class PropfileUtils
                     closeQuietly(leftSock);
                     closeQuietly(rightSock);
                 }
-                exiting("serve", "void", ok);
+                ts.exiting("serve", "void", ok);
             }
         }
 
         private void start()
         {
-            boolean ok = entering("start");
+            boolean ok = ts.entering("start");
             try {
                 if (!listen)
                 {
@@ -561,7 +564,7 @@ public class PropfileUtils
                     @Override
                     public void run()
                     {
-                        boolean ok = entering(Thread.currentThread().getName() + ".run");
+                        boolean ok = ts.entering(Thread.currentThread().getName() + ".run");
                         try
                         {
                             acceptLoop();
@@ -571,21 +574,23 @@ public class PropfileUtils
                         {
                             throw new RuntimeException(e);
                         } finally {
-                            exiting(Thread.currentThread().getName() + ".run", "void", ok);
+                            ts.exiting(Thread.currentThread().getName() + ".run", "void", ok);
                         }
                     }
                 }, "listenThread-" + name);
                 listenThread.start();
                 ok = true;
             } finally {
-                exiting("start", "void", ok);
+                ts.exiting("start", "void", ok);
             }
         }
 
+        private final TraceSupport ts = new TraceSupport(this);
+        
         private Forward(String name)
             throws Exception
         {
-            boolean ok = entering("Forward", name);
+            boolean ok = ts.entering("Forward", name);
             try {
                 this.name = Objects.requireNonNull(name);
                 parseAddress();
@@ -593,22 +598,7 @@ public class PropfileUtils
                 parseListen();
                 ok = true;
             } finally {
-                exiting("Forward", this, ok);
-            }
-        }
-
-        private boolean entering(String sourceMethod, Object... params)
-        {
-            LOGGER.entering(Forward.class.getName(), sourceMethod, prepend(params, this));
-            return false;
-        }
-
-        private void exiting(String sourceMethod, Object res, boolean ok)
-        {
-            if (ok) {
-                LOGGER.exiting(Forward.class.getName(), sourceMethod, res);
-            } else {
-                LOGGER.exiting(Forward.class.getName(), sourceMethod);
+                ts.exiting("Forward", this, ok);
             }
         }
 
@@ -685,7 +675,7 @@ public class PropfileUtils
         final int defaultPort /**/)
         throws URISyntaxException
     {
-        boolean ok = entering("parseAddress0", addressString, defaultPort);
+        boolean ok = staticEntering("parseAddress0", addressString, defaultPort);
         InetSocketAddress res = null;
         try {
             final URI uri = new URI("my://" + addressString);
@@ -708,14 +698,14 @@ public class PropfileUtils
             ok = true;
             return res;
         } finally {
-            exiting("parseAddress0", res, ok);
+            staticExiting("parseAddress0", res, ok);
         }
     }
 
     private static InetSocketAddress getResolved(InetSocketAddress unresolved)
         throws UnknownHostException
     {
-        boolean ok = entering("getResolved", unresolved);
+        boolean ok = staticEntering("getResolved", unresolved);
         InetSocketAddress res = null;
         try {
             res =
@@ -727,17 +717,42 @@ public class PropfileUtils
             ok = true;
             return res;
         } finally {
-            exiting("getResolved", res, ok);
+            staticExiting("getResolved", res, ok);
         }
     }
 
-    private static boolean entering(String sourceMethod, Object... params)
+    
+    private static class TraceSupport {
+        private final Object self;
+
+        private TraceSupport(Object self) {
+            this.self = self;
+        }
+
+        private boolean entering(String sourceMethod, Object... params)
+        {
+            LOGGER.entering(self.getClass().getName(), sourceMethod, prepend(params, self));
+            return false;
+        }
+
+        private void exiting(String sourceMethod, Object res, boolean ok)
+        {
+            if (ok) {
+                LOGGER.exiting(self.getClass().getName(), sourceMethod, res);
+            } else {
+                LOGGER.exiting(self.getClass().getName(), sourceMethod);
+            }
+        }
+
+    }
+    
+    private static boolean staticEntering(String sourceMethod, Object... params)
     {
         LOGGER.entering(PropfileUtils.class.getName(), sourceMethod, params);
         return false;
     }
 
-    private static void exiting(String sourceMethod, Object res, boolean ok)
+    private static void staticExiting(String sourceMethod, Object res, boolean ok)
     {
         if (ok) {
             LOGGER.exiting(PropfileUtils.class.getName(), sourceMethod, res);
