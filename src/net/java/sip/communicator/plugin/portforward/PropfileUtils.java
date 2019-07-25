@@ -283,7 +283,9 @@ public class PropfileUtils
                     if (!ok)
                     {
                         closeQuietly(leftSock);
-                        closeQuietly(rightSock);
+                        if (fut != null) {
+                            closeQuietly(fut.get());
+                        }
                     }
                 }
             }
