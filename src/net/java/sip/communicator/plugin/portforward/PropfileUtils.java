@@ -3,7 +3,6 @@ package net.java.sip.communicator.plugin.portforward;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -22,19 +21,19 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
 
 import org.ice4j.pseudotcp.PseudoTcpSocket;
 import org.ice4j.pseudotcp.PseudoTcpSocketFactory;
@@ -44,7 +43,7 @@ public class PropfileUtils
 
     private static final String PREFIX = "portforward.";
 
-    public static Set<String> listSubKeys(Properties props, String prefix)
+    private static Set<String> listSubKeys(Properties props, String prefix)
     {
         Set<String> res = new HashSet<>();
         for (String x : props.stringPropertyNames())
@@ -61,34 +60,47 @@ public class PropfileUtils
 
     private Properties props;
 
-    public void load() throws Exception
+    private void load() throws Exception
     {
-        props = new Properties();
-        try (FileInputStream in = new FileInputStream(
-            "C:/progs/media/jitsi/lib/portforward.properties"))
-        {
-            props.load(in);
-        }
-        Set<String> forwardNames = listSubKeys(props, PREFIX);
-        for (String name : forwardNames)
-        {
-            Forward forward = new Forward(name);
-            System.out.println(name);
-            System.out.println(forward.getContactName());
-            System.out.println(forward.getAddress());
-            System.out.println(forward.isListen());
+        boolean ok = entering("load");
+        try {
+            props = new Properties();
+            try (FileInputStream in = new FileInputStream(
+                "C:/progs/media/jitsi/lib/portforward.properties"))
+            {
+                props.load(in);
+            }
+            Set<String> forwardNames = listSubKeys(props, PREFIX);
+            for (String name : forwardNames)
+            {
+                Forward forward = new Forward(name);
+                System.out.println(name);
+                System.out.println(forward.getContactName());
+                System.out.println(forward.getAddress());
+                System.out.println(forward.isListen());
+                addForward(forward);
+            }
+            ok = true;
+        } finally {
+            exiting("load", "void", ok);
         }
     }
 
-    public void addForward(Forward forward)
+    private void addForward(Forward forward)
     {
-        forwardsByName.put(forward.name, forward);
-        forward.start();
+        boolean ok = entering("addForward", forward);
+        try {
+            forwardsByName.put(forward.name, forward);
+            forward.start();
+            ok = true;
+        } finally {
+            exiting("addForward", "void", ok);
+        }
     }
 
-    // public Forward getByContact
+    // private Forward getByContact
     // private Map<String, Forward> by
-    public void contactStatusChange(String contact, boolean online)
+    private void contactStatusChange(String contact, boolean online)
     {
         //
     }
@@ -104,7 +116,7 @@ public class PropfileUtils
 
     private static long HALF = 4000000000000000000L;
 
-    public enum ControlCommand
+    private enum ControlCommand
     {
         CONNECT
     }
@@ -132,48 +144,53 @@ public class PropfileUtils
     private final ExecutorService executorService =
         Executors.newCachedThreadPool();
 
-    public class Contact
+    private class Contact
     {
 
-        public Contact(DatagramSocket datagramSocket,
-            SocketAddress remoteAddress, boolean accept)
+        private Contact(DatagramSocket datagramSocket, SocketAddress remoteAddress, boolean accept)
             throws IOException
         {
-            this.datagramSocket = datagramSocket;
-            this.remoteAddress = remoteAddress;
-            controlSocket = pseudoTcpSocketFactory.createSocket(datagramSocket);
-            controlSocket.setConversationID(0L);
-            controlSocket.setMTU(MTU);
-            controlSocket.setDebugName("control");
-            if (accept)
-            {
-                controlSocket.accept(CONNECT_TIMEOUT);
-            }
-            else
-            {
-                listenCounter = HALF;
-                controlSocket.connect(remoteAddress, CONNECT_TIMEOUT);
-            }
-            controlOut =
-                new BufferedOutputStream(controlSocket.getOutputStream());
-            controlIn = new DataInputStream(
-                new BufferedInputStream(controlSocket.getInputStream()));
-            controlThread = new Thread(new Runnable()
-            {
-                @Override
-                public void run()
+            boolean ok = entering("Contact", datagramSocket, remoteAddress, accept);
+            try {
+                this.datagramSocket = datagramSocket;
+                this.remoteAddress = remoteAddress;
+                controlSocket = pseudoTcpSocketFactory.createSocket(datagramSocket);
+                controlSocket.setConversationID(0L);
+                controlSocket.setMTU(MTU);
+                controlSocket.setDebugName("control");
+                if (accept)
                 {
-                    try
-                    {
-                        controlLoop();
-                    }
-                    catch (Exception e)
-                    {
-                        e.printStackTrace();
-                    }
+                    controlSocket.accept(CONNECT_TIMEOUT);
                 }
-            }, "controlThread-" + remoteAddress.toString());
-            controlThread.start();
+                else
+                {
+                    listenCounter = HALF;
+                    controlSocket.connect(remoteAddress, CONNECT_TIMEOUT);
+                }
+                controlOut =
+                    new BufferedOutputStream(controlSocket.getOutputStream());
+                controlIn = new DataInputStream(
+                    new BufferedInputStream(controlSocket.getInputStream()));
+                controlThread = new Thread(new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+                        try
+                        {
+                            controlLoop();
+                        }
+                        catch (Exception e)
+                        {
+                            e.printStackTrace();
+                        }
+                    }
+                }, "controlThread-" + remoteAddress.toString());
+                controlThread.start();
+                ok = true;
+            } finally {
+                exiting("Contact", this, ok);
+            }
         }
 
         private final DatagramSocket datagramSocket;
@@ -192,49 +209,73 @@ public class PropfileUtils
 
         private void controlLoop() throws Exception
         {
-            for (;;)
-            {
-                int payloadLength = controlIn.readShort();
-                if (payloadLength < 1 || payloadLength > MAX_COMMAND)
+            boolean ok = entering("controlLoop");
+            try {
+                for (;;)
                 {
-                    throw new Exception("Allowed payload size between " + 1
-                        + " and " + MAX_COMMAND + ", actual: " + payloadLength);
-                }
-                final byte[] payload = new byte[payloadLength];
-                controlIn.readFully(payload);
-                Thread serveThread = new Thread(new Runnable()
-                {
-                    @Override
-                    public void run()
+                    int payloadLength = controlIn.readShort();
+                    if (payloadLength < 1 || payloadLength > MAX_COMMAND)
                     {
-                        try
-                        {
-                            serve(payload);
-                        }
-                        catch (Exception e)
-                        {
-                            e.printStackTrace();
-                        }
+                        throw new Exception("Allowed payload size between " + 1
+                            + " and " + MAX_COMMAND + ", actual: " + payloadLength);
                     }
-                }, "serveThread");
-                serveThread.start();
+                    final byte[] payload = new byte[payloadLength];
+                    controlIn.readFully(payload);
+                    Thread serveThread = new Thread(new Runnable()
+                    {
+                        @Override
+                        public void run()
+                        {
+                            try
+                            {
+                                serve(payload);
+                            }
+                            catch (Exception e)
+                            {
+                                e.printStackTrace();
+                            }
+                        }
+                    }, "serveThread");
+                    serveThread.start();
+                }
+                // unreachable
+            } finally {
+                exiting("controlLoop", "void", ok);
             }
         }
 
         private void serve(byte[] payload) throws Exception
         {
-            DataInputStream msgIn =
-                new DataInputStream(new ByteArrayInputStream(payload));
-            String commandName = msgIn.readUTF();
-            ControlCommand command = ControlCommand.valueOf(commandName);
-            switch (command)
+            boolean ok = entering("serve", payload);
+            try {
+                DataInputStream msgIn =
+                    new DataInputStream(new ByteArrayInputStream(payload));
+                String commandName = msgIn.readUTF();
+                ControlCommand command = ControlCommand.valueOf(commandName);
+                switch (command)
+                {
+                case CONNECT:
+                    serveConnect(msgIn);
+                    break;
+                }
+                ok = true;
+            } finally {
+                exiting("serve", "void", ok);
+            }
+        }
+
+        private void serveConnect(DataInputStream msgIn) throws Exception        {
+            boolean ok = entering("serveConnect", msgIn);
+            PseudoTcpSocket leftSock = null;
+            Socket rightSock = null;
+            Future<Socket> fut = null;
+            try
             {
-            case CONNECT:
-            {
+                
                 String forwardName = msgIn.readUTF();
                 long conversationID = msgIn.readLong();
-                final Forward forward = forwardsByName.get(forwardName);
-                Future<Socket> fut = null;
+                Forward forward = forwardsByName.get(forwardName);
+                final InetSocketAddress unresolved = forward.getAddress();
                 if (!forward.isListen())
                 {
                     fut = executorService.submit(new Callable<Socket>()
@@ -242,166 +283,200 @@ public class PropfileUtils
                         @Override
                         public Socket call() throws Exception
                         {
-                            InetSocketAddress unresolved = forward.getAddress();
-                            InetSocketAddress resolved =
-                                unresolved.isUnresolved()
-                                    ? new InetSocketAddress(
-                                        InetAddress.getByName(
-                                            unresolved.getHostName()),
-                                        unresolved.getPort())
-                                    : unresolved;
-                            return new Socket(resolved.getAddress(),
-                                resolved.getPort());
+                            boolean ok = entering("connectTask-("+ unresolved +").call");
+                            Socket res = null;
+                            try {
+                                InetSocketAddress resolved =
+                                    unresolved.isUnresolved()
+                                        ? new InetSocketAddress(
+                                            InetAddress.getByName(
+                                                unresolved.getHostName()),
+                                            unresolved.getPort())
+                                        : unresolved;
+                                res = new Socket(resolved.getAddress(),
+                                    resolved.getPort());
+                                ok = true;
+                                return res;
+                            } finally {
+                                exiting("connectTask-("+ unresolved +").call", res, ok);
+                            }
                         }
                     });
                 }
-                Socket rightSock = null;
-                PseudoTcpSocket leftSock =
+                
+                leftSock =
                     pseudoTcpSocketFactory.createSocket(datagramSocket);
-                boolean ok = false;
-                try
+                leftSock.setMTU(MTU);
+                leftSock.setConversationID(conversationID);
+                String debugName =
+                    forwardName + "-" + conversationID + "-" + "C";
+                leftSock.setDebugName(debugName);
+                leftSock.connect(remoteAddress, CONNECT_TIMEOUT);
+                if (!forward.isListen())
                 {
-                    leftSock.setMTU(MTU);
-                    leftSock.setConversationID(conversationID);
-                    String debugName =
-                        forwardName + "-" + conversationID + "-" + "C";
-                    leftSock.setDebugName(debugName);
-                    leftSock.connect(remoteAddress, CONNECT_TIMEOUT);
-                    if (!forward.isListen())
-                    {
-                        rightSock = fut.get();
-                        AtomicInteger refCount = new AtomicInteger(2);
-                        startPump(leftSock, rightSock, refCount,
-                            debugName + " ==>");
-                        startPump(rightSock, leftSock, refCount,
-                            debugName + " <==");
-                        ok = true;
-                    }
-                }
-                finally
-                {
-                    if (!ok)
-                    {
-                        closeQuietly(leftSock);
-                        if (fut != null) {
-                            closeQuietly(fut.get());
-                        }
-                    }
+                    rightSock = fut.get();
+                    AtomicInteger refCount = new AtomicInteger(2);
+                    startPump(leftSock, rightSock, refCount,
+                        debugName + " ==>");
+                    startPump(rightSock, leftSock, refCount,
+                        debugName + " <==");
+                    ok = true;
                 }
             }
-                break;
+            finally
+            {
+                if (!ok)
+                {
+                    closeQuietly(leftSock);
+                    if (fut != null)
+                    {
+                        closeQuietly(fut.get());
+                    }
+                }
+                exiting("serveConnect", "void", ok);
             }
         }
 
-        public long getNextConversationId(String forwardName) throws Exception
+        private long getNextConversationId(String forwardName) throws Exception
         {
-            Objects.requireNonNull(forwardName);
-            listenCounter++;
-
-            ByteBuffer bb = ByteBuffer.allocate(MAX_COMMAND);
-            @SuppressWarnings("resource")
-            DataOutputStream message =
-                new DataOutputStream(new ByteBufferOutputStream(bb));
-
-            message.writeShort(0);
-            message.writeUTF(ControlCommand.CONNECT.name());
-            message.writeUTF(forwardName);
-            message.writeLong(listenCounter);
-            int payloadLength = bb.position() - 2;
-            bb.putShort(0, (short) payloadLength);
-            bb.flip();
-
-            byte[] arr = bb.array();
-            controlOut.write(arr, 0, bb.limit());
-            controlOut.flush();
-
-            return listenCounter;
+            boolean ok = entering("getNextConversationId", forwardName);
+            long res = 0;
+            try {
+                Objects.requireNonNull(forwardName);
+                listenCounter++;
+    
+                ByteBuffer bb = ByteBuffer.allocate(MAX_COMMAND);
+                @SuppressWarnings("resource")
+                DataOutputStream message =
+                    new DataOutputStream(new ByteBufferOutputStream(bb));
+    
+                message.writeShort(0);
+                message.writeUTF(ControlCommand.CONNECT.name());
+                message.writeUTF(forwardName);
+                message.writeLong(listenCounter);
+                int payloadLength = bb.position() - 2;
+                bb.putShort(0, (short) payloadLength);
+                bb.flip();
+    
+                byte[] arr = bb.array();
+                controlOut.write(arr, 0, bb.limit());
+                controlOut.flush();
+    
+                res = listenCounter;
+                ok = true;
+                return res;
+            } finally {
+                exiting("getNextConversationId", res, ok);
+            }
         }
 
-        public DatagramSocket getDatagramSocket()
+        private DatagramSocket getDatagramSocket()
         {
             return datagramSocket;
         }
+    }
 
-        public SocketAddress getRemoteAddress()
-        {
-            return remoteAddress;
+    private Contact getConnectedContact(String contactName) throws Exception
+    {
+        boolean ok = entering("getConnectedContact", contactName);
+        Contact res = null;
+        try {
+            res = contactsByName.get(contactName);
+            ok = true;
+            return res;
+        } finally {
+            exiting("getConnectedContact", res, ok);
         }
     }
 
-    public Contact getConnectedContact(String contactName) throws Exception
+    private void start() throws Exception
     {
-        Contact contact = contactsByName.get(contactName);
-        return contact;
-    }
-
-    public void start() throws Exception
-    {
-        load();
-    }
-
-    public static void closeQuietly(Closeable resource)
-    {
-        if (resource != null)
-        {
-            try
-            {
-                resource.close();
-            }
-            catch (IOException e)
-            {
-            }
+        boolean ok = entering("start");
+        try {
+            load();
+            ok = true;
+        } finally {
+            exiting("start", "void", ok);
         }
     }
 
-    public static void startPump(final Socket readSock, final Socket writeSock,
-        final AtomicInteger refCount, String name)
+    private static void closeQuietly(Closeable resource)
     {
-        Objects.requireNonNull(readSock);
-        Objects.requireNonNull(writeSock);
-        Thread t = new Thread(new Runnable()
-        {
-
-            @Override
-            public void run()
+        boolean ok = entering("closeQuietly", resource);
+        try {
+            if (resource != null)
             {
                 try
                 {
+                    resource.close();
+                }
+                catch (IOException e)
+                {
+                }
+            }
+            ok = true;
+        } finally {
+            exiting("closeQuietly", "void", ok);
+        }
+    }
+
+    private static void startPump(final Socket readSock, final Socket writeSock,
+        final AtomicInteger refCount, String name)
+    {
+        boolean ok = entering("startPump", readSock, writeSock, refCount, name);
+        try {
+            Objects.requireNonNull(readSock);
+            Objects.requireNonNull(writeSock);
+            Thread t = new Thread(new Runnable()
+            {
+    
+                @Override
+                public void run()
+                {
+                    boolean ok = entering(Thread.currentThread().getName() + ".run");
                     try
                     {
-                        InputStream in = readSock.getInputStream();
-                        OutputStream out = writeSock.getOutputStream();
-                        byte[] buf = new byte[MTU];
-                        int nb;
-                        while (-1 != (nb = in.read(buf)))
+                        try
                         {
-                            out.write(buf, 0, nb);
-                            out.flush();
+                            InputStream in = readSock.getInputStream();
+                            OutputStream out = writeSock.getOutputStream();
+                            byte[] buf = new byte[MTU];
+                            int nb;
+                            while (-1 != (nb = in.read(buf)))
+                            {
+                                out.write(buf, 0, nb);
+                                out.flush();
+                            }
                         }
+                        finally
+                        {
+                            writeSock.shutdownOutput();
+                        }
+                        ok = true;
+                    }
+                    catch (Exception e)
+                    {
+                        throw new RuntimeException(e);
                     }
                     finally
                     {
-                        writeSock.shutdownOutput();
+                        if (refCount.decrementAndGet() == 0)
+                        {
+                            closeQuietly(readSock);
+                            closeQuietly(writeSock);
+                        }
+                        exiting(Thread.currentThread().getName() + ".run", "void", ok);
                     }
                 }
-                catch (Exception e)
-                {
-                    e.printStackTrace();
-                }
-                finally
-                {
-                    if (refCount.decrementAndGet() == 0)
-                    {
-                        closeQuietly(readSock);
-                        closeQuietly(writeSock);
-                    }
-                }
-            }
-        }, name);
-        t.start();
+            }, name);
+            t.start();
+            ok = true;
+        } finally {
+            exiting("startPump", "void", ok);
+        }
     }
 
-    public class Forward
+    private class Forward
     {
         private final String name;
 
@@ -413,91 +488,131 @@ public class PropfileUtils
 
         private void acceptLoop() throws Exception
         {
-            InetSocketAddress resolved = getResolved(address);
-            ServerSocket ss =
-                new ServerSocket(resolved.getPort(), 10, resolved.getAddress());
+            boolean ok = entering("acceptLoop");
+            ServerSocket ss = null;
             try
             {
+                InetSocketAddress resolved = getResolved(address);
+                ss = new ServerSocket(resolved.getPort(), 10, resolved.getAddress());
                 for (;;)
                 {
                     Socket leftSock = ss.accept();
-                    PseudoTcpSocket rightSock = null;
-                    boolean ok = false;
-                    try
-                    {
-                        Contact contact = getConnectedContact(contactName);
-                        DatagramSocket dgramSock = contact.getDatagramSocket();
-                        rightSock =
-                            pseudoTcpSocketFactory.createSocket(dgramSock);
-                        rightSock.setMTU(MTU);
-                        long conversationID =
-                            contact.getNextConversationId(name);
-                        rightSock.setConversationID(conversationID);
-                        String debugName =
-                            name + "-" + conversationID + "-" + "A";
-                        rightSock.setDebugName(debugName);
-                        rightSock.accept(CONNECT_TIMEOUT);
-                        AtomicInteger refCount = new AtomicInteger(2);
-                        startPump(leftSock, rightSock, refCount,
-                            "==> " + debugName);
-                        startPump(rightSock, leftSock, refCount,
-                            "<== " + debugName);
-                        ok = true;
-                    }
-                    catch (Exception e)
-                    {
-                        continue;
-                    }
-                    finally
-                    {
-                        if (!ok)
-                        {
-                            closeQuietly(leftSock);
-                            closeQuietly(rightSock);
-                        }
-                    }
+                    serve(leftSock);
                 }
+                // unreachable
             }
             finally
             {
-                ss.close();
+                closeQuietly(ss);
+                exiting("acceptLoop", "void", ok);
             }
         }
 
-        public void start()
+        private void serve(Socket leftSock)
         {
-            if (!listen)
+            boolean ok = entering("serve", leftSock);
+            PseudoTcpSocket rightSock = null;
+            try
+            {
+                Contact contact = getConnectedContact(contactName);
+                DatagramSocket dgramSock = contact.getDatagramSocket();
+                rightSock =
+                    pseudoTcpSocketFactory.createSocket(dgramSock);
+                rightSock.setMTU(MTU);
+                long conversationID =
+                    contact.getNextConversationId(name);
+                rightSock.setConversationID(conversationID);
+                String debugName =
+                    name + "-" + conversationID + "-" + "A";
+                rightSock.setDebugName(debugName);
+                rightSock.accept(CONNECT_TIMEOUT);
+                AtomicInteger refCount = new AtomicInteger(2);
+                startPump(leftSock, rightSock, refCount,
+                    "==> " + debugName);
+                startPump(rightSock, leftSock, refCount,
+                    "<== " + debugName);
+                ok = true;
+            }
+            catch (Exception e)
             {
                 return;
             }
-            listenThread = new Thread(new Runnable()
+            finally
             {
-                @Override
-                public void run()
+                if (!ok)
                 {
-                    try
-                    {
-                        acceptLoop();
-                    }
-                    catch (Exception e)
-                    {
-                        e.printStackTrace();
-                    }
+                    closeQuietly(leftSock);
+                    closeQuietly(rightSock);
                 }
-            }, "forward-" + name);
-            listenThread.start();
+                exiting("serve", "void", ok);
+            }
         }
 
-        public Forward(String name)
+        private void start()
+        {
+            boolean ok = entering("start");
+            try {
+                if (!listen)
+                {
+                    return;
+                }
+                listenThread = new Thread(new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+                        boolean ok = entering(Thread.currentThread().getName() + ".run");
+                        try
+                        {
+                            acceptLoop();
+                            ok = true;
+                        }
+                        catch (Exception e)
+                        {
+                            throw new RuntimeException(e);
+                        } finally {
+                            exiting(Thread.currentThread().getName() + ".run", "void", ok);
+                        }
+                    }
+                }, "listenThread-" + name);
+                listenThread.start();
+                ok = true;
+            } finally {
+                exiting("start", "void", ok);
+            }
+        }
+
+        private Forward(String name)
             throws Exception
         {
-            this.name = Objects.requireNonNull(name);
-            parseAddress();
-            parseContact();
-            parseListen();
+            boolean ok = entering("Forward", name);
+            try {
+                this.name = Objects.requireNonNull(name);
+                parseAddress();
+                parseContact();
+                parseListen();
+                ok = true;
+            } finally {
+                exiting("Forward", this, ok);
+            }
         }
 
-        public String getContactName()
+        private boolean entering(String sourceMethod, Object... params)
+        {
+            LOGGER.entering(Forward.class.getName(), sourceMethod, prepend(params, this));
+            return false;
+        }
+
+        private void exiting(String sourceMethod, Object res, boolean ok)
+        {
+            if (ok) {
+                LOGGER.exiting(Forward.class.getName(), sourceMethod, res);
+            } else {
+                LOGGER.exiting(Forward.class.getName(), sourceMethod);
+            }
+        }
+
+        private String getContactName()
         {
             return contactName;
         }
@@ -508,7 +623,7 @@ public class PropfileUtils
             Objects.requireNonNull(contactName);
         }
 
-        public InetSocketAddress getAddress()
+        private InetSocketAddress getAddress()
         {
             return address;
         }
@@ -521,7 +636,7 @@ public class PropfileUtils
         /**
          * @return should we listen, default true
          */
-        public boolean isListen()
+        private boolean isListen()
         {
             return listen;
         }
@@ -539,7 +654,7 @@ public class PropfileUtils
          * @return true or false if and only if the string value is exactly
          *         "true" or "false", otherwise null
          */
-        public Boolean getBoolean(String prop)
+        private Boolean getBoolean(String prop)
         {
             String s = getProp(prop);
             return Boolean.toString(false).equalsIgnoreCase(s) ? Boolean.FALSE
@@ -547,7 +662,7 @@ public class PropfileUtils
                     : null;
         }
 
-        public String getProp(String prop)
+        private String getProp(String prop)
         {
             return props.getProperty(PREFIX + name + "." + prop);
         }
@@ -566,36 +681,85 @@ public class PropfileUtils
         // props.prop
     }
 
-    public static InetSocketAddress parseAddress0(final String addressString,
+    private static InetSocketAddress parseAddress0(final String addressString,
         final int defaultPort /**/)
         throws URISyntaxException
     {
-        final URI uri = new URI("my://" + addressString);
-
-        final String host = uri.getHost();
-        int port = uri.getPort();
-
-        if (port == -1)
-        {
-            port = defaultPort;
+        boolean ok = entering("parseAddress0", addressString, defaultPort);
+        InetSocketAddress res = null;
+        try {
+            final URI uri = new URI("my://" + addressString);
+    
+            final String host = uri.getHost();
+            int port = uri.getPort();
+    
+            if (port == -1)
+            {
+                port = defaultPort;
+            }
+    
+            if (host == null || port == -1)
+            {
+                throw new URISyntaxException(uri.toString(),
+                    "must have host or no default port specified");
+            }
+    
+            res = InetSocketAddress.createUnresolved(host, port);
+            ok = true;
+            return res;
+        } finally {
+            exiting("parseAddress0", res, ok);
         }
-
-        if (host == null || port == -1)
-        {
-            throw new URISyntaxException(uri.toString(),
-                "must have host or no default port specified");
-        }
-
-        return InetSocketAddress.createUnresolved(host, port);
     }
 
-    public static InetSocketAddress getResolved(InetSocketAddress unresolved)
+    private static InetSocketAddress getResolved(InetSocketAddress unresolved)
         throws UnknownHostException
     {
-        return unresolved.isUnresolved()
-            ? new InetSocketAddress(
-                InetAddress.getByName(unresolved.getHostName()),
-                unresolved.getPort())
-            : unresolved;
+        boolean ok = entering("getResolved", unresolved);
+        InetSocketAddress res = null;
+        try {
+            res =
+                unresolved.isUnresolved()
+                    ? new InetSocketAddress(
+                        InetAddress.getByName(unresolved.getHostName()),
+                        unresolved.getPort())
+                    : unresolved;
+            ok = true;
+            return res;
+        } finally {
+            exiting("getResolved", res, ok);
+        }
     }
+
+    private static boolean entering(String sourceMethod, Object... params)
+    {
+        LOGGER.entering(PropfileUtils.class.getName(), sourceMethod, params);
+        return false;
+    }
+
+    private static void exiting(String sourceMethod, Object res, boolean ok)
+    {
+        if (ok) {
+            LOGGER.exiting(PropfileUtils.class.getName(), sourceMethod, res);
+        } else {
+            LOGGER.exiting(PropfileUtils.class.getName(), sourceMethod);
+        }
+    }
+
+    public static Object[] prepend(Object[] a, Object b)
+    {
+        if (a == null)
+        {
+            return new Object[]{ b };
+        }
+
+        int length = a.length;
+        Object[] result = new Object[length + 1];
+        System.arraycopy(a, 0, result, 1, length);
+        result[0] = b;
+        return result;
+    }
+
+    private static final Logger LOGGER =
+        Logger.getLogger(PropfileUtils.class.getName());
 }
