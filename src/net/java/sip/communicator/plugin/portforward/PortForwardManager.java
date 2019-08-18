@@ -35,6 +35,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.ice4j.pseudotcp.PseudoTcpSocket;
@@ -117,7 +118,8 @@ public class PortForwardManager
         return socket;
     }
 
-    private static long HALF = 4000000000000000000L;
+    // private static long HALF = 4000000000000000000L;
+    private static long HALF = 4L;
 
     private enum ControlCommand
     {
@@ -398,7 +400,9 @@ public class PortForwardManager
                 String debugName =
                     forwardName + "-" + conversationID + "-" + "C";
                 leftSock.setDebugName(debugName);
+                LOGGER.log(Level.FINE, "Connecting {0} to {1} ...", new Object[] { debugName, remoteAddress});
                 leftSock.connect(remoteAddress, CONNECT_TIMEOUT);
+                LOGGER.log(Level.FINE, "Connected {0}", debugName);
                 if (!forward.isListen())
                 {
                     rightSock = fut.get();
@@ -530,7 +534,9 @@ public class PortForwardManager
                     conf.getName() + "-" + conversationID + "-" + "A";
                 rightSock.setDebugName(debugName);
 
+                LOGGER.log(Level.FINE, "Accepting {0} ...", debugName);
                 rightSock.accept(CONNECT_TIMEOUT);
+                LOGGER.log(Level.FINE, "Accepted {0}", debugName);
                 AtomicInteger refCount = new AtomicInteger(2);
                 startPump(leftSock, rightSock, refCount, "==> " + debugName);
                 startPump(rightSock, leftSock, refCount, "<== " + debugName);
