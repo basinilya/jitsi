@@ -4,6 +4,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -17,11 +18,14 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
+import org.ice4j.pseudotcp.PseudoTcpSocket;
+
 public final class PortForwardUtils
 {
     public static final int MTU = 1300;
 
-    public static final String PREFIX = "portforward.";
+    public static final String PREFIX_LISTEN = "portforward.listen.";
+    public static final String PREFIX_CONNECT = "portforward.connect.";
 
 
     private PortForwardUtils()

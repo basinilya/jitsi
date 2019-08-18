@@ -4,8 +4,12 @@ import static net.java.sip.communicator.plugin.portforward.PortForwardUtils.pars
 
 import java.net.InetSocketAddress;
 import java.net.URISyntaxException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
+
+import org.apache.commons.lang3.StringUtils;
 
 public class ForwardConfig
 {
@@ -14,16 +18,18 @@ public class ForwardConfig
 
     private InetSocketAddress address;
 
-    private String contactName;
+    private List<String> contactNames;
 
     private boolean listen;
 
-    public ForwardConfig(Properties props, String name)
+    public ForwardConfig(boolean listen, Properties props, String prefix, String name)
         throws Exception
     {
         this.name = Objects.requireNonNull(name);
+        this.listen = listen;
         Builder builder = new Builder();
         builder.props = Objects.requireNonNull(props);
+        builder.prefix = Objects.requireNonNull(prefix);
         builder.build();
     }
 
@@ -31,10 +37,6 @@ public class ForwardConfig
         return name;
     }
 
-    public String getContactName()
-    {
-        return contactName;
-    }
 
     public InetSocketAddress getAddress()
     {
@@ -51,24 +53,21 @@ public class ForwardConfig
 
     private class Builder
     {
+        private String prefix;
         private Properties props;
 
         private void build() throws Exception
         {
             parseAddress();
             parseContact();
-            parseListen();
-        }
-
-        private void parseListen()
-        {
-            listen = !Boolean.FALSE.equals(getBoolean("listen"));
         }
 
         private void parseContact()
         {
-            contactName = getProp("contact");
-            Objects.requireNonNull(contactName);
+            String sContacts = getProp("contacts");
+            Objects.requireNonNull(sContacts);
+            String[] a = StringUtils.split(sContacts);
+            contactNames = Arrays.asList(a);
         }
 
         private void parseAddress() throws URISyntaxException
@@ -93,8 +92,18 @@ public class ForwardConfig
         private String getProp(String prop)
         {
             return props
-                .getProperty(PortForwardUtils.PREFIX + name + "." + prop);
+                .getProperty(prefix + name + "." + prop);
         }
+    }
+
+    public List<String> getContactNames()
+    {
+        return contactNames;
+    }
+
+    public void setContactNames(List<String> contactNames)
+    {
+        this.contactNames = contactNames;
     }
 
 }
