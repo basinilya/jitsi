@@ -17,11 +17,13 @@ import java.io.DataOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -106,12 +108,15 @@ public class PortForwardManager
     private final PseudoTcpSocketFactory pseudoTcpSocketFactory =
         new PseudoTcpSocketFactory();
 
-    private PseudoTcpSocket createPseudoTcpSocket(DatagramSocket datagramSocket) throws IOException {
-        PseudoTcpSocket socket = pseudoTcpSocketFactory.createSocket(datagramSocket);
+    private PseudoTcpSocket createPseudoTcpSocket(DatagramSocket datagramSocket)
+        throws IOException
+    {
+        PseudoTcpSocket socket =
+            pseudoTcpSocketFactory.createSocket(datagramSocket);
         socket.setMTU(MTU);
         return socket;
     }
-    
+
     private static long HALF = 4000000000000000000L;
 
     private enum ControlCommand
@@ -135,7 +140,7 @@ public class PortForwardManager
             boolean ok = ts.entering("Contact", contactName);
             try
             {
-                this.contactName = contactName;
+                this.remoteContactName = contactName;
                 ok = true;
             }
             finally
@@ -144,11 +149,70 @@ public class PortForwardManager
             }
         }
 
-        private synchronized void init() throws IOException {
-            if (datagramSocket == null) {
-                
+        private synchronized void init() throws Exception
+        {
+            if (datagramSocket == null)
+            {
+                Future<Void> fut = null;
+                boolean accept;
+                String otherName;
+                if ("me-accept".equals(remoteContactName))
+                {
+                    accept = false;
+                    otherName = "me-connect";
+                }
+                else if ("me-connect".equals(remoteContactName))
+                {
+                    accept = true;
+                    otherName = "me-accept";
+                }
+                else
+                {
+                    throw new UnsupportedOperationException();
+                }
+                DatagramSocket dsock =
+                    new DatagramSocket(0, InetAddress.getLoopbackAddress());
+                Contact other = null;
+                synchronized (contactsByName)
+                {
+                    for (;;)
+                    {
+                        other = contactsByName.get(otherName);
+                        if (other != null)
+                        {
+                            break;
+                        }
+                        contactsByName.wait();
+                    }
+                    other.remoteAddress = dsock.getLocalSocketAddress();
+                    contactsByName.notifyAll();
+                    if (remoteAddress == null)
+                    {
+                        final Contact other2 = other;
+                        fut = executorService.submit(new Callable<Void>()
+                        {
+                            @Override
+                            public Void call() throws Exception
+                            {
+                                other2.init();
+                                return null;
+                            }
+                        });
+                        do
+                        {
+                            contactsByName.wait();
+                        }
+                        while (remoteAddress == null);
+                    }
+                }
+                init(dsock, remoteAddress, accept);
+                if (fut != null)
+                {
+                    fut.get();
+                }
             }
         }
+
         private void init(DatagramSocket datagramSocket,
             SocketAddress remoteAddress, boolean accept)
             throws IOException
@@ -195,14 +259,15 @@ public class PortForwardManager
             }
             finally
             {
-                if (!ok) {
+                if (!ok)
+                {
                     closeQuietly(controlSocket);
                 }
                 ts.exiting("init", this, ok);
             }
         }
 
-        private final String contactName;
+        private final String remoteContactName;
 
         private DatagramSocket datagramSocket;
 
@@ -296,8 +361,7 @@ public class PortForwardManager
                 Forward forward = forwardsByNameConnect.get(forwardName);
                 if (forward == null)
                 {
-                    throw new Exception(
-                        "No such connect forward: " + forwardName);
+                    throw new Exception("No such forward: " + forwardName);
                 }
                 final InetSocketAddress unresolved = forward.getAddress();
                 if (!forward.isListen())
@@ -398,7 +462,7 @@ public class PortForwardManager
             }
         }
 
-        private DatagramSocket getDatagramSocket() throws IOException
+        private DatagramSocket getDatagramSocket() throws Exception
         {
             init();
             return datagramSocket;
@@ -551,7 +615,7 @@ public class PortForwardManager
 
         private final TraceSupport ts = new TraceSupport(this, LOGGER);
 
-        private List<Contact> contacts;
+        private List<Contact> contacts = new ArrayList<>();
 
         private Forward(String prefix, String name, boolean listen)
             throws Exception
@@ -569,6 +633,7 @@ public class PortForwardManager
                         {
                             contact = new Contact(contactName);
                             contactsByName.put(contactName, contact);
+                            contactsByName.notifyAll();
                         }
                         contacts.add(contact);
                     }
